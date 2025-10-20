@@ -1,0 +1,115 @@
+<mujoco model="biped">
+  <compiler angle="radian"/>
+  <option timestep="0.001" gravity="0 0 -9.81"/>
+  <size njmax="100" nconmax="100"/>
+
+  <option>
+    <flag contact="disable"/>
+  </option>
+
+  <asset>
+    <!-- Scaled meshes (mm → m) -->
+    <mesh name="hips" file="meshes/hips.stl" scale="0.001 0.001 0.001"/>
+    <mesh name="left_leg" file="meshes/left_leg.stl" scale="0.001 0.001 0.001"/>
+    <mesh name="right_leg" file="meshes/right_leg.stl" scale="0.001 0.001 0.001"/>
+    <mesh name="left_connectors" file="meshes/left_connectors.stl" scale="0.001 0.001 0.001"/>
+    <mesh name="right_connectors" file="meshes/right_connectors.stl" scale="0.001 0.001 0.001"/>
+    <mesh name="left_foot" file="meshes/left_foot.stl" scale="0.001 0.001 0.001"/>
+    <mesh name="right_foot" file="meshes/right_foot.stl" scale="0.001 0.001 0.001"/>
+
+    <material name="mat_hips" rgba="0.6 0.6 1.0 1"/>
+    <material name="mat_leg" rgba="0.5 0.8 1.0 1"/>
+    <material name="mat_connector" rgba="1.0 0.6 0.6 1"/>
+    <material name="mat_foot" rgba="1.0 0.6 0.9 1"/>
+  </asset>
+
+  <worldbody>
+    <body name="hips" pos="0 0 0">
+      <geom type="mesh" mesh="hips" material="mat_hips"/>
+
+      <!-- Left side -->
+      <body name="left_connectors">
+        <joint name="left_hip_joint" type="hinge"
+               pos="-0.031 -0.005 -0.045"
+               axis="1 0 0"
+               range="-1.57 1.57"
+               damping="0.05" armature="0.0002"/>
+        <geom type="mesh" mesh="left_connectors" material="mat_connector"/>
+
+        <body name="left_leg">
+          <joint name="left_leg_joint" type="hinge"
+                 pos="0.025 -0.005 -0.095"
+                 axis="1 0 0"
+                 range="-1.57 1.57"
+                 damping="0.05" armature="0.0002"/>
+          <geom type="mesh" mesh="left_leg" material="mat_leg"/>
+
+          <body name="left_foot">
+            <joint name="left_foot_joint" type="hinge"
+                   pos="0.026 -0.005 -0.153"
+                   axis="1 0 0"
+                   range="-0.4 0.4"
+                   damping="0.05" armature="0.0002"/>
+            <inertial pos="0 0 0" mass="0.05"
+                      diaginertia="0.0005 0.0005 0.0005"/>
+            <geom type="mesh" mesh="left_foot" material="mat_foot"/>
+          </body>
+        </body>
+      </body>
+
+      <!-- Right side -->
+      <body name="right_connectors">
+        <joint name="right_hip_joint" type="hinge"
+               pos="0.031 -0.005 -0.045"
+               axis="1 0 0"
+               range="-1.57 1.57"
+               damping="0.05" armature="0.0002"/>
+        <geom type="mesh" mesh="right_connectors" material="mat_connector"/>
+
+        <body name="right_leg">
+          <joint name="right_leg_joint" type="hinge"
+                 pos="-0.025 -0.005 -0.095"
+                 axis="1 0 0"
+                 range="-1.57 1.57"
+                 damping="0.05" armature="0.0002"/>
+          <geom type="mesh" mesh="right_leg" material="mat_leg"/>
+
+          <body name="right_foot">
+            <joint name="right_foot_joint" type="hinge"
+                   pos="0.054 -0.005 -0.153"
+                   axis="1 0 0"
+                   range="-0.4 0.4"
+                   damping="0.05" armature="0.0002"/>
+            <inertial pos="0 0 0" mass="0.05"
+                      diaginertia="0.0005 0.0005 0.0005"/>
+            <geom type="mesh" mesh="right_foot" material="mat_foot"/>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <!-- Left side -->
+    <position name="left_hip_act" joint="left_hip_joint"
+              kp="50" forcelimited="true" forcerange="-0.3 0.3"
+              ctrlrange="-1.57 1.57"/>
+    <position name="left_leg_act" joint="left_leg_joint"
+              kp="50" forcelimited="true" forcerange="-0.3 0.3"
+              ctrlrange="-1.57 1.57"/>
+    <position name="left_foot_act" joint="left_foot_joint"
+              kp="50" forcelimited="true" forcerange="-0.3 0.3"
+              ctrlrange="-0.4 0.4"/>
+
+    <!-- Right side -->
+    <position name="right_hip_act" joint="right_hip_joint"
+              kp="50" forcelimited="true" forcerange="-0.3 0.3"
+              ctrlrange="-1.57 1.57"/>
+    <position name="right_leg_act" joint="right_leg_joint"
+              kp="50" forcelimited="true" forcerange="-0.3 0.3"
+              ctrlrange="-1.57 1.57"/>
+    <position name="right_foot_act" joint="right_foot_joint"
+              kp="50" forcelimited="true" forcerange="-0.3 0.3"
+              ctrlrange="-0.4 0.4"/>
+  </actuator>
+</mujoco>
