@@ -57,12 +57,11 @@
             contype="0" conaffinity="0"/>
 
       <camera name="fixed_cam"
-          pos="0.8 0.8 0.3"
+          pos="0.8 0.8 0.2"
           mode="targetbody"
           target="axis_indicator"
-          fovy="30"/>
+          fovy="35"/>
     </body>
-
 
     <geom name="floor" type="plane"
           pos="0 0 0"
@@ -82,7 +81,8 @@
       <!-- Hips -->
       <body name="hips" pos="0 0 0">
         <geom type="mesh" mesh="hips" material="mat_hips"/>
-        <inertial pos="0.04000000 -0.00551483 -0.00876121" mass="0.19516483" fullinertia="2.79564202e-04 5.41144131e-04 2.76130700e-04 8.70966555e-08 1.50339933e-08 -1.59928592e-05"/>
+
+        <inertial pos="0.04000000 -0.00551483 -0.00876121" mass="0.15613186" fullinertia="2.23651362e-04 4.32915305e-04 2.20904560e-04 6.96773244e-08 1.20271947e-08 -1.27942874e-05"/>
 
         <!-- IMU site on hips -->
         <site name="imu_site" pos="0.04 0 0.03" size="0.01" rgba="1 0 0 0"/>
@@ -111,8 +111,8 @@
                    range="-1.57 1.57"
                    damping="0.05" armature="0.0002"/>
             <geom type="mesh" mesh="left_leg" material="mat_leg"/>
-            
-            <inertial pos="-0.00284265 -0.00694262 -0.10872447" mass="0.06740817" fullinertia="2.58151517e-05 4.34994292e-05 2.42254258e-05 -4.58137877e-07 2.61487615e-06 1.24741306e-06"/>
+
+            <inertial pos="-0.00284265 -0.00694262 -0.10872447" mass="0.16177960" fullinertia="6.19563640e-05 1.04398630e-04 5.81410219e-05 -1.09953090e-06 6.27570276e-06 2.99379135e-06"/>
 
             <body name="left_foot">
               <joint name="left_foot_joint" type="hinge"
@@ -123,7 +123,7 @@
               
               <geom type="mesh" mesh="left_foot" material="mat_foot"/>
               
-              <inertial pos="-0.00388570 -0.01480068 -0.15577790" mass="0.06248788" fullinertia="1.60356674e-05 1.61574787e-05 2.58531406e-05 -3.99516485e-07 -4.32592721e-07 -3.43976147e-08"/>
+              <inertial pos="-0.00388570 -0.01480068 -0.15577790" mass="0.19996122" fullinertia="5.13141356e-05 5.17039319e-05 8.27300498e-05 -1.27845275e-06 -1.38429671e-06 -1.10072367e-07"/>
               
               <site name="left_toe"
                 type="box"
@@ -158,8 +158,8 @@
                    range="-1.57 1.57"
                    damping="0.05" armature="0.0002"/>
             <geom type="mesh" mesh="right_leg" material="mat_leg"/>
-
-            <inertial pos="0.08284265 -0.00694302 -0.10868068" mass="0.06740817" fullinertia="2.58230973e-05 4.35073746e-05 2.42254263e-05 4.58138012e-07 -2.64416437e-06 1.25686164e-06"/>
+            
+            <inertial pos="0.08284265 -0.00694302 -0.10868068" mass="0.16177960" fullinertia="6.19754334e-05 1.04417699e-04 5.81410232e-05 1.09953123e-06 -6.34599449e-06 3.01646793e-06"/>
 
             <body name="right_foot">
               <joint name="right_foot_joint" type="hinge"
@@ -169,8 +169,7 @@
                      damping="0.05" armature="0.0002"/>
 
               <geom type="mesh" mesh="right_foot" material="mat_foot"/>
-
-              <inertial pos="0.08388570 -0.01482039 -0.15572569" mass="0.06248788" fullinertia="1.60116521e-05 1.61328146e-05 2.58537897e-05 4.09045390e-07 4.12061741e-07 -3.94227840e-08"/>              
+              <inertial pos="0.08388570 -0.01482039 -0.15572569" mass="0.19996123" fullinertia="5.12372867e-05 5.16250069e-05 8.27321270e-05 1.30894525e-06 1.31859757e-06 -1.26152909e-07"/>
 
               <site name="right_toe"
                 type="box"
