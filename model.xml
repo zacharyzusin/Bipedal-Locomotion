@@ -67,9 +67,7 @@
     <geom name="floor" type="plane"
           pos="0 0 0"
           size="5 5 0.1"
-          material="mat_checker"
-          contype="1" conaffinity="1" condim="3"
-          friction="1.0 0.005 0.0001"/>
+          material="mat_checker"/>
 
     <light name="main_light"
       pos="0 0 2"
@@ -78,12 +76,12 @@
       specular="0.5 0.5 0.5"
       mode="trackcom"/>
 
-    <body name="biped" pos="0 0 0.17" euler="0 0 1.5708">
+    <body name="biped" pos="0 0 0.167" euler="0 0 1.5708">
       <joint type="free"/>  <!-- allow full movement in the arena -->
     
       <!-- Hips -->
       <body name="hips" pos="0 0 0">
-        <geom type="mesh" mesh="hips" material="mat_hips" mass="0.3"/>
+        <geom type="mesh" mesh="hips" material="mat_hips" mass="0.1"/>
 
         <!-- IMU site on hips -->
         <site name="imu_site" pos="0.04 0 0.03" size="0.01" rgba="1 0 0 0"/>
@@ -117,11 +115,10 @@
                      axis="1 0 0"
                      range="-0.4 0.4"
                      damping="0.05" armature="0.0002"/>
-              <inertial pos="0 0 0" mass="0.05"
+              <inertial pos="0 0 0" mass="0.2"
                         diaginertia="0.0005 0.0005 0.0005"/>
               <geom type="mesh" mesh="left_foot" material="mat_foot"
-                    contype="1" conaffinity="1" mass="0.1"
-                    friction="1.0 0.005 0.0001" solimp="0.9 0.95 0.001" solref="0.02 1"/>
+                    mass="0.1"/>
               <site name="left_toe"
                 type="box"
                 pos="-0.005 -0.03 -0.167"
@@ -160,11 +157,10 @@
                      axis="1 0 0"
                      range="-0.4 0.4"
                      damping="0.05" armature="0.0002"/>
-              <inertial pos="0 0 0" mass="0.05"
+              <inertial pos="0 0 0" mass="0.2"
                         diaginertia="0.0005 0.0005 0.0005"/>
               <geom type="mesh" mesh="right_foot" material="mat_foot"
-                    contype="1" conaffinity="1" mass="0.1"
-                    friction="1.0 0.005 0.0001" solimp="0.9 0.95 0.001" solref="0.02 1"/>
+                    mass="0.1"/>
 
               <site name="right_toe"
                 type="box"
