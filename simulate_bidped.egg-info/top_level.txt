@@ -1,5 +1,0 @@
-algorithms
-core
-policies
-scripts
-training

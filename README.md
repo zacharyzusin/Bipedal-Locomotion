@@ -11,6 +11,7 @@ pip install torch --index-url https://download.pytorch.org/whl/cpu  # CPU cluste
 pip install mujoco==3.1.2
 pip install fastapi uvicorn
 pip install dataclasses-json  # optional but handy for configs
+pip install fastapi uvicorn pillow
 
 
 mkdir -p ~/.mujoco
