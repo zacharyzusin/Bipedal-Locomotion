@@ -18,12 +18,13 @@ from tasks.walker_done import walker_done
 def make_env() -> MujocoEnv:
     cfg = MujocoEnvConfig(
         xml_path="assets/walker2d/walker2d.xml",
+        # xml_path="assets/biped/biped.xml",
         episode_length=5_000,
         frame_skip=5,
         ctrl_scale=0.1,
         reward_fn=walker_reward,
         done_fn=walker_done,
-        reset_noise_scale=0.01,
+        reset_noise_scale=0.0,
         render=False,  # workers don't need rendering
     )
     return MujocoEnv(cfg)
@@ -53,7 +54,7 @@ def main():
     mp.set_start_method("spawn", force=True)
 
     train_cfg = MPTrainConfig(
-        total_steps=5_000_000,
+        total_steps=200_000,
         horizon=1024,
         num_workers=7,
         log_interval=10,

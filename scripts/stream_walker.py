@@ -14,7 +14,8 @@ from tasks.walker_done import walker_done
 def make_env() -> MujocoEnv:
     # For streaming we want rendering enabled
     cfg = MujocoEnvConfig(
-        xml_path="assets/walker2d/walker2d.xml",  # or your custom walker XML
+        # xml_path="assets/walker2d/walker2d.xml",  # or your custom walker XML
+        xml_path="assets/biped/biped.xml",
         episode_length=5_000,
         frame_skip=5,
         ctrl_scale=0.1,

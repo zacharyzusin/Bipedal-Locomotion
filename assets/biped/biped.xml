@@ -1,0 +1,157 @@
+<mujoco model="biped">
+  <!-- Match DeepMind walker compiler + autolimits -->
+  <compiler angle="radian" autolimits="true"/>
+
+  <!-- Match DeepMind walker option: just specify integrator -->
+  <option integrator="RK4"/>
+
+  <!-- Defaults matching DeepMind walker2d -->
+  <default class="main">
+    <joint limited="true" armature="0.01" damping="0.1"/>
+    <geom conaffinity="0" friction="0.7 0.1 0.1" rgba="0.8 0.6 0.4 1"/>
+  </default>
+
+  <size njmax="100" nconmax="100"/>
+
+  <visual>
+    <map znear="0.0005" zfar="10"/>
+  </visual>
+
+  <asset>
+    <mesh name="hips"            file="meshes/hips.stl"            scale="0.001 0.001 0.001"/>
+    <mesh name="left_leg"        file="meshes/left_leg.stl"        scale="0.001 0.001 0.001"/>
+    <mesh name="right_leg"       file="meshes/right_leg.stl"       scale="0.001 0.001 0.001"/>
+    <mesh name="left_connectors" file="meshes/left_connectors.stl" scale="0.001 0.001 0.001"/>
+    <mesh name="right_connectors" file="meshes/right_connectors.stl" scale="0.001 0.001 0.001"/>
+    <mesh name="left_foot"       file="meshes/left_foot.stl"       scale="0.001 0.001 0.001"/>
+    <mesh name="right_foot"      file="meshes/right_foot.stl"      scale="0.001 0.001 0.001"/>
+
+    <material name="mat_hips"      rgba="0.6 0.6 1.0 1"/>
+    <material name="mat_leg"       rgba="0.5 0.8 1.0 1"/>
+    <material name="mat_connector" rgba="1.0 0.6 0.6 1"/>
+    <material name="mat_foot"      rgba="1.0 0.6 0.9 1"/>
+
+    <texture name="tex_checker" type="2d" builtin="checker"
+             width="512" height="512"
+             rgb1="0.2 0.2 0.2" rgb2="0.8 0.8 0.8"
+             mark="none" markrgb="0 0 0"/>
+    <material name="mat_checker" texture="tex_checker" texrepeat="20 20"
+              reflectance="0.2" shininess="0.1"/>
+  </asset>
+
+  <worldbody>
+
+    <!-- Axis indicator (non-colliding) -->
+    <!-- <body name="axis_indicator" pos="0 0 0.3">
+      <geom type="capsule" fromto="0 0 0 0.2 0 0" size="0.002"
+            rgba="1 0 0 1" mass="0" density="0" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0 0 0 0.2 0" size="0.002"
+            rgba="0 1 0 1" mass="0" density="0" contype="0" conaffinity="0"/>
+      <geom type="capsule" fromto="0 0 0 0 0 0.2" size="0.002"
+            rgba="0 0 1 1" mass="0" density="0" contype="0" conaffinity="0"/>
+
+      <camera name="fixed_cam"
+              pos="0.8 0.8 0.2"
+              mode="targetbody"
+              target="axis_indicator"
+              fovy="35"/>
+    </body> -->
+
+    <!-- Floor: like walker, conaffinity=1 so it collides with main geoms -->
+    <geom name="floor" type="plane"
+          pos="0 0 0"
+          size="5 5 0.1"
+          material="mat_checker"
+          conaffinity="1"/>
+
+    <light name="main_light"
+           pos="0 0 2"
+           dir="0 0 -1"
+           diffuse="1 1 1"
+           specular="0.5 0.5 0.5"
+           mode="trackcom"/>
+
+    <body name="biped" pos="0 0 0.17" euler="0 0 1.5708">
+      <!-- We keep a free base instead of rootx/rootz/rooty triple -->
+      <joint type="free"/>
+
+      <body name="hips" pos="0 0 0">
+        <geom type="mesh" mesh="hips" material="mat_hips" class="main"/>
+
+        <!-- LEFT -->
+        <body name="left_connectors">
+          <joint name="left_hip_joint" type="hinge"
+                 pos="-0.031 -0.005 -0.045"
+                 axis="1 0 0"
+                 range="-1.57 1.57"/>
+          <geom type="mesh" mesh="left_connectors" material="mat_connector" class="main"/>
+
+          <body name="left_leg">
+            <joint name="left_leg_joint" type="hinge"
+                   pos="0.025 -0.005 -0.095"
+                   axis="1 0 0"
+                   range="-1.57 1.57"/>
+            <geom type="mesh" mesh="left_leg" material="mat_leg" class="main"/>
+
+            <body name="left_foot">
+              <joint name="left_foot_joint" type="hinge"
+                     pos="0.026 -0.005 -0.153"
+                     axis="1 0 0"
+                     range="-0.4 0.4"/>
+              <geom type="mesh" mesh="left_foot" material="mat_foot" class="main"/>
+            </body>
+          </body>
+        </body>
+
+        <!-- RIGHT -->
+        <body name="right_connectors">
+          <joint name="right_hip_joint" type="hinge"
+                 pos="0.031 -0.005 -0.045"
+                 axis="1 0 0"
+                 range="-1.57 1.57"/>
+          <geom type="mesh" mesh="right_connectors" material="mat_connector" class="main"/>
+
+          <body name="right_leg">
+            <joint name="right_leg_joint" type="hinge"
+                   pos="-0.025 -0.005 -0.095"
+                   axis="1 0 0"
+                   range="-1.57 1.57"/>
+            <geom type="mesh" mesh="right_leg" material="mat_leg" class="main"/>
+
+            <body name="right_foot">
+              <joint name="right_foot_joint" type="hinge"
+                     pos="0.054 -0.005 -0.153"
+                     axis="1 0 0"
+                     range="-0.4 0.4"/>
+              <geom type="mesh" mesh="right_foot" material="mat_foot" class="main"/>
+            </body>
+          </body>
+        </body>
+
+      </body>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <!-- Torque actuators (walker-style) -->
+    <general name="left_hip_act"   joint="left_hip_joint"
+             ctrlrange="-1 1" gear="0.5 0 0 0 0 0" actdim="0"/>
+    <general name="left_leg_act"   joint="left_leg_joint"
+             ctrlrange="-1 1" gear="0.5 0 0 0 0 0" actdim="0"/>
+    <general name="left_foot_act"  joint="left_foot_joint"
+             ctrlrange="-1 1" gear="0.5 0 0 0 0 0" actdim="0"/>
+
+    <general name="right_hip_act"  joint="right_hip_joint"
+             ctrlrange="-1 1" gear="0.5 0 0 0 0 0" actdim="0"/>
+    <general name="right_leg_act"  joint="right_leg_joint"
+             ctrlrange="-1 1" gear="0.5 0 0 0 0 0" actdim="0"/>
+    <general name="right_foot_act" joint="right_foot_joint"
+             ctrlrange="-1 1" gear="0.5 0 0 0 0 0" actdim="0"/>
+  </actuator>
+
+  <contact>
+    <exclude body1="hips" body2="left_connectors"/>
+    <exclude body1="hips" body2="right_connectors"/>
+  </contact>
+
+</mujoco>
