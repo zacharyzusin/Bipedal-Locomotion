@@ -27,7 +27,8 @@ class MujocoEnvConfig:
     ctrl_scale: float = 1.0
     reward_fn: Optional[RewardFn] = None
     done_fn: Optional[DoneFn] = None
-
+    reset_noise_scale: float = 0.0
+    
     # Rendering-related (for evaluation / streaming)
     render: bool = False
     width: int = 640
@@ -149,11 +150,19 @@ class MujocoEnv(Env):
         # Fully reset MuJoCo internal state
         mujoco.mj_resetData(self.model, self.data)
 
-        # Restore initial pose (in case you later randomize around it)
-        self.data.qpos[:] = self._init_qpos
-        self.data.qvel[:] = self._init_qvel
+        qpos = self._init_qpos.copy()
+        qvel = self._init_qvel.copy()
 
-        # VERY important: clear controls
+        s = self.cfg.reset_noise_scale
+        if s > 0.0:
+            # noise in [-s, s] for each element
+            qpos += self._rng.uniform(-s, s, size=qpos.shape)
+            qvel += self._rng.uniform(-s, s, size=qvel.shape)
+        
+        self.data.qpos[:] = qpos
+        self.data.qvel[:] = qvel
+        
+        # clear controls
         if self.model.nu > 0:
             self.data.ctrl[:] = 0.0
 

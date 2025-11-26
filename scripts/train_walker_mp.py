@@ -23,6 +23,7 @@ def make_env() -> MujocoEnv:
         ctrl_scale=0.1,
         reward_fn=walker_reward,
         done_fn=walker_done,
+        reset_noise_scale=0.01,
         render=False,  # workers don't need rendering
     )
     return MujocoEnv(cfg)
@@ -52,7 +53,7 @@ def main():
     mp.set_start_method("spawn", force=True)
 
     train_cfg = MPTrainConfig(
-        total_steps=1_000_000,
+        total_steps=5_000_000,
         horizon=1024,
         num_workers=7,
         log_interval=10,

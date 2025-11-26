@@ -18,6 +18,7 @@ def make_env() -> MujocoEnv:
         episode_length=5_000,
         frame_skip=5,
         ctrl_scale=0.1,
+        reset_noise_scale=0.01,
         render=True,
         reward_fn=walker_reward,
         done_fn=walker_done,
