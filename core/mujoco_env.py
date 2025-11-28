@@ -1,6 +1,6 @@
 # core/mujoco_env.py
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Any, Optional, Tuple, Union, Mapping
 
@@ -18,6 +18,12 @@ RewardFn = Callable[[mujoco.MjModel, mujoco.MjData], RewardReturn]
 
 DoneFn = Callable[[mujoco.MjModel, mujoco.MjData, int], bool]
 
+@dataclass
+class CameraConfig:
+    distance: float = 3.0
+    azimuth: float = 90.0
+    elevation: float = -20.0
+    lookat: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 0.5]))
 
 @dataclass
 class MujocoEnvConfig:
@@ -113,13 +119,23 @@ class MujocoEnv(Env):
         self._reward_fn: RewardFn = cfg.reward_fn or self._default_reward_fn
         self._done_fn: DoneFn = cfg.done_fn or self._default_done_fn
 
+        # Camera configuration for rendering
+        self._camera_config = CameraConfig()
+
+        # Create a MuJoCo camera object for custom camera control
+        self._mjv_camera = mujoco.MjvCamera()
+        # Initialize with default values
+        self._mjv_camera.distance = self._camera_config.distance
+        self._mjv_camera.azimuth = self._camera_config.azimuth
+        self._mjv_camera.elevation = self._camera_config.elevation
+        self._mjv_camera.lookat[:] = self._camera_config.lookat
+
         # Optional renderer for offscreen rendering
         self._renderer: Optional[mujoco.Renderer] = None
         if cfg.render:
             self._renderer = mujoco.Renderer(
                 self.model, height=cfg.height, width=cfg.width
             )
-            # optional: set camera here if desired; we’ll do it on each render
 
     # -------------------------------------------------------------------------
     # Core helpers
@@ -158,12 +174,17 @@ class MujocoEnv(Env):
         if self._renderer is None:
             return None
 
+        # Use custom camera settings if no specific camera_id is set
         if self.cfg.camera_id is not None:
             self._renderer.update_scene(self.data, camera=self.cfg.camera_id)
         else:
-            self._renderer.update_scene(self.data)
+            # Use our custom mjvCamera
+            self._renderer.update_scene(self.data, camera=self._mjv_camera)
 
-        rgb = self._renderer.render()  # float32 in [0,1], shape (H,W,3)
+        rgb = self._renderer.render()
+        # Check if already uint8 or needs conversion
+        if rgb.dtype == np.uint8:
+            return rgb
         frame = (rgb * 255).astype(np.uint8)
         return frame
 
@@ -253,3 +274,23 @@ class MujocoEnv(Env):
     def close(self) -> None:
         # Renderer holds GL resources; cleanly drop reference
         self._renderer = None
+
+    def set_camera(
+        self,
+        distance: float,
+        azimuth: float,
+        elevation: float,
+        lookat: tuple[float, float, float],
+    ) -> None:
+        """Update camera parameters for rendering."""
+        # Update config
+        self._camera_config.distance = distance
+        self._camera_config.azimuth = azimuth
+        self._camera_config.elevation = elevation
+        self._camera_config.lookat[:] = lookat
+        
+        # Update the MuJoCo camera object
+        self._mjv_camera.distance = distance
+        self._mjv_camera.azimuth = azimuth
+        self._mjv_camera.elevation = elevation
+        self._mjv_camera.lookat[:] = lookat
