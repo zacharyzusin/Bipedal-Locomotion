@@ -76,6 +76,11 @@
       <joint type="free"/>
 
       <body name="hips" pos="0 0 0">
+        <site name="base"
+            pos="0.04 -0.005 -0.045"
+            size="0.01"
+            rgba="1 0 0 0"
+            type="sphere"/>
         <geom type="mesh" mesh="hips" material="mat_hips" class="main"/>
 
         <!-- LEFT -->
@@ -88,17 +93,23 @@
 
           <body name="left_leg">
             <joint name="left_leg_joint" type="hinge"
-                   pos="0.025 -0.005 -0.095"
+                   pos="-0.031 -0.005 -0.095"
                    axis="1 0 0"
                    range="-1.57 1.57"/>
             <geom type="mesh" mesh="left_leg" material="mat_leg" class="main"/>
 
             <body name="left_foot">
               <joint name="left_foot_joint" type="hinge"
-                     pos="0.026 -0.005 -0.153"
+                     pos="-0.031 -0.005 -0.153"
                      axis="1 0 0"
                      range="-0.4 0.4"/>
               <geom type="mesh" mesh="left_foot" material="mat_foot" class="main"/>
+              <!-- IK / contact reference point on the left foot -->
+              <site name="left_foot_ik"
+                    pos="-0.031 -0.005 -0.153"
+                    size="0.01"
+                    rgba="1 0 0 0"
+                    type="sphere"/>
             </body>
           </body>
         </body>
@@ -106,24 +117,30 @@
         <!-- RIGHT -->
         <body name="right_connectors">
           <joint name="right_hip_joint" type="hinge"
-                 pos="0.031 -0.005 -0.045"
+                 pos="0.111 -0.005 -0.045"
                  axis="1 0 0"
                  range="-1.57 1.57"/>
           <geom type="mesh" mesh="right_connectors" material="mat_connector" class="main"/>
 
           <body name="right_leg">
             <joint name="right_leg_joint" type="hinge"
-                   pos="-0.025 -0.005 -0.095"
+                   pos="0.111 -0.005 -0.095"
                    axis="1 0 0"
                    range="-1.57 1.57"/>
             <geom type="mesh" mesh="right_leg" material="mat_leg" class="main"/>
 
             <body name="right_foot">
               <joint name="right_foot_joint" type="hinge"
-                     pos="0.054 -0.005 -0.153"
+                     pos="0.111 -0.005 -0.153"
                      axis="1 0 0"
                      range="-0.4 0.4"/>
               <geom type="mesh" mesh="right_foot" material="mat_foot" class="main"/>
+              <!-- IK / contact reference point on the right foot -->
+              <site name="right_foot_ik"
+                    pos="0.111 -0.005 -0.153"
+                    size="0.01"
+                    rgba="1 0 0 0"
+                    type="sphere"/>
             </body>
           </body>
         </body>

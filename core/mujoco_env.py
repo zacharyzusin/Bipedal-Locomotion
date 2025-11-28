@@ -35,6 +35,12 @@ class MujocoEnvConfig:
     height: int = 480
     camera_id: int | str | None = None  # can use named or numeric camera
 
+    # for generic gait/IK calibration
+    hip_site: Optional[str] = None
+    left_foot_site: Optional[str] = None
+    right_foot_site: Optional[str] = None
+
+
 
 class MujocoEnv(Env):
     def __init__(self, cfg: MujocoEnvConfig):
@@ -55,6 +61,41 @@ class MujocoEnv(Env):
 
         # Episode time-step counter
         self._t = 0
+
+        # Expose neutral hip/foot info for controllers
+        self.hip_height: Optional[float] = None
+        self.foot_base_pos: Dict[str, np.ndarray] = {}
+
+        # Expose neutral hip/foot info for controllers
+        self.hip_height: Optional[float] = None
+        self.foot_base_pos: Dict[str, np.ndarray] = {}
+
+        if (
+            self.cfg.hip_site is not None
+            and self.cfg.left_foot_site is not None
+            and self.cfg.right_foot_site is not None
+        ):
+            hip_id = self.model.site(self.cfg.hip_site).id
+            hip_pos = self.data.site_xpos[hip_id].copy()
+            self.hip_height = float(hip_pos[2])
+
+            left_sid = self.model.site(self.cfg.left_foot_site).id
+            right_sid = self.model.site(self.cfg.right_foot_site).id
+
+            left_pos = self.data.site_xpos[left_sid].copy()
+            right_pos = self.data.site_xpos[right_sid].copy()
+
+            # Hip frame, sagittal (x,z)
+            self.foot_base_pos["left"] = np.array(
+                [left_pos[0] - hip_pos[0],
+                 left_pos[2] - hip_pos[2]],
+                dtype=np.float32,
+            )
+            self.foot_base_pos["right"] = np.array(
+                [right_pos[0] - hip_pos[0],
+                 right_pos[2] - hip_pos[2]],
+                dtype=np.float32,
+            )
 
         # RNG for any noise / randomization
         self._rng = np.random.default_rng()

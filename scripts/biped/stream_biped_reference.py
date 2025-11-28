@@ -31,6 +31,9 @@ def make_env() -> MujocoEnv:
         done_fn=done,
         width=640,
         height=480,
+        hip_site="base",
+        left_foot_site="left_foot_ik",
+        right_foot_site="right_foot_ik",
     )
     return MujocoEnv(cfg)
 
@@ -38,32 +41,31 @@ def make_env() -> MujocoEnv:
 def make_policy(env: MujocoEnv):
     # ---- Gait parameters ----
     gait_params = GaitParams(
-        step_length=0.01,      # tune to be realistic for your tiny biped
+        step_length=0.02,      # tune to be realistic for your tiny biped
         step_height=0.01,      # front foot height
-        step_clearance=1,  # back foot just a bit lower
-        cycle_duration=1.0,    # 1 second per full step R->L
+        cycle_duration=1.25,    # 1 second per full step R->L
     )
 
     leg_geom_left = Planar2RLegConfig(
         L1=0.05,   # thigh length [m]
         L2=0.058,   # shank length [m]
         knee_sign=1.0,
-        hip_offset=0,
+        hip_offset=np.pi/2,
         knee_offset=0,
-        ankle_offset=0,
+        ankle_offset=-np.pi/2,
 
     )
     leg_geom_right = Planar2RLegConfig(
         L1=0.05,
         L2=0.058,
         knee_sign=1.0,
-        hip_offset=0,
+        hip_offset=np.pi/2,
         knee_offset=0,
-        ankle_offset=0,
+        ankle_offset=-np.pi/2,
     )
 
     pd_cfg = PDConfig(
-        kp=10.0,
+        kp=50.0,
         kd=1.0,
         torque_limit=None,
     )
