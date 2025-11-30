@@ -66,15 +66,15 @@ def make_env():
 
     # Tuned PD gains: strong but not crazy, with a reasonable torque limit
     pd_cfg = PDConfig(
-        kp=600.0,     # was 1200.0
-        kd=40.0,      # a bit more damping
+        kp=50.0,  
+        kd=1.0,    
         torque_limit=150.0,
     )
 
     # Give the policy a bit more range to actually move the feet
     foot_cfg = FootActionConfig(
-        max_dx=0.05,
-        max_dz=0.04,
+        max_dx=0.2,
+        max_dz=0.1,
     )
 
     env = BipedIKEnv(
@@ -116,7 +116,7 @@ def make_ppo(policy):
 # ------------------------------------------------------------
 def main():
     train_cfg = TrainConfig(
-        total_steps=500_000,
+        total_steps=1_000_000,
         horizon=1024,
         log_interval=10,
         checkpoint_path="checkpoints/biped_ik.pt",

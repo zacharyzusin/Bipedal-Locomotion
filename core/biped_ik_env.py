@@ -184,7 +184,7 @@ class BipedIKEnv(Env):
             qd_des=None,
         )
 
-        TAU_SCALE = 20.0   # try anywhere 10–50
+        TAU_SCALE = 40.0   # try anywhere 10–50
         tau_ctrl *= TAU_SCALE
 
 
