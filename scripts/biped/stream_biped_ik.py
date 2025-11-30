@@ -58,8 +58,19 @@ def make_env_render():
                               knee_offset=0.0,
                               ankle_offset=-np.pi/2)
 
-    pd_cfg = PDConfig(kp=50.0, kd=1.0, torque_limit=None)
-    foot_cfg = FootActionConfig(max_dx=0.02, max_dz=0.015)
+    pd_cfg = PDConfig(
+        kp=600.0,
+        kd=40.0,
+        torque_limit=150.0,
+    )
+    foot_cfg = FootActionConfig(
+        max_dx=0.05,
+        max_dz=0.04,
+    )
+
+
+    """pd_cfg = PDConfig(kp=50.0, kd=1.0, torque_limit=None)
+    foot_cfg = FootActionConfig(max_dx=0.02, max_dz=0.015)"""
 
     env = BipedIKEnv(low_env, joint_map, leg_l, leg_r, pd_cfg, foot_cfg)
     return env
