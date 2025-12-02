@@ -11,14 +11,16 @@ from streaming.mjpeg_server import create_app
 from tasks.walker2d.reward import reward
 from tasks.walker2d.done import done
 
+from control.pd import PDConfig
+
 def make_env() -> MujocoEnv:
     # For streaming we want rendering enabled
     cfg = MujocoEnvConfig(
         xml_path="assets/walker2d/walker2d.xml",
         episode_length=5_000,
         frame_skip=5,
-        ctrl_scale=0.1,
-        reset_noise_scale=0.01,
+        pd_cfg = PDConfig(kp=5.0, kd=1.0, torque_limit=1.0),
+        reset_noise_scale=0.0,
         render=True,
         reward_fn=reward,
         done_fn=done,

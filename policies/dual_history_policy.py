@@ -1,11 +1,10 @@
 # policies/dual_history_policy.py
 from __future__ import annotations
-from typing import Tuple
+from typing import Dict, Tuple, Union
 import torch
 from torch import nn
 import torch.distributions as D
-from typing import Tuple
-
+import numpy as np
 from core.specs import EnvSpec
 
 
@@ -14,41 +13,45 @@ class DualHistoryActorCritic(nn.Module):
     https://arxiv.org/abs/2401.16889
     Dual-history policy:
     - Long history encoded with 1D CNN
-    - Short history + current obs + command go directly to base MLP
+    - Short history + reference motion + command + CNN(long) go into MLP
     - Output: Gaussian over normalized actions (tanh on mean)
+    
+    Expects observation dict with keys:
+        - "short_history": (short_horizon * pair_dim,) flattened
+        - "long_history": (long_horizon * pair_dim,) flattened
+        - "ref": (num_lookahead * ref_dim,) reference positions
+        - "command": (command_dim,) command vector
     """
 
     def __init__(
         self,
         spec: EnvSpec,
-        base_obs_dim: int,
-        short_hist_len: int,
-        long_hist_len: int,
-        command_dim: int,
+        pair_dim: int,  # obs_dim + act_dim per timestep
+        short_horizon: int,
+        long_horizon: int,
+        ref_dim: int,
+        command_dim: int = 0,
         hidden_size: int = 512,
         act_std: float = 0.1,
     ):
         super().__init__()
         self.spec = spec
-        self.base_obs_dim = base_obs_dim
-        self.short_hist_len = short_hist_len
-        self.long_hist_len = long_hist_len
+        self.pair_dim = pair_dim
+        self.short_horizon = short_horizon
+        self.long_horizon = long_horizon
+        self.ref_dim = ref_dim
         self.command_dim = command_dim
 
         act_dim = spec.act.shape[0]
-        pair_dim = base_obs_dim + act_dim
 
-        short_dim = short_hist_len * pair_dim
-        long_dim = long_hist_len * pair_dim
+        # Dimension calculations
+        self.short_dim = short_horizon * pair_dim
+        self.long_dim = long_horizon * pair_dim
 
-        # CNN expects (B, C, T). We'll set C=pair_dim, T=long_hist_len.
-        self.long_channels = pair_dim
-        self.long_steps = long_hist_len
-        assert long_dim == self.long_channels * self.long_steps
-
-        # CNN encoder as in the paper: [6,32,3] and [4,16,2]
+        # CNN encoder for long history
+        # Input shape: (B, pair_dim, long_horizon) - channels first
         self.long_encoder = nn.Sequential(
-            nn.Conv1d(self.long_channels, 32, kernel_size=6, stride=3),
+            nn.Conv1d(pair_dim, 32, kernel_size=6, stride=3),
             nn.ReLU(),
             nn.Conv1d(32, 16, kernel_size=4, stride=2),
             nn.ReLU(),
@@ -57,13 +60,15 @@ class DualHistoryActorCritic(nn.Module):
 
         # Compute CNN output size with a dummy pass
         with torch.no_grad():
-            dummy = torch.zeros(1, self.long_channels, self.long_steps)
+            dummy = torch.zeros(1, pair_dim, long_horizon)
             cnn_out_dim = self.long_encoder(dummy).shape[-1]
+        self.cnn_out_dim = cnn_out_dim
 
-        base_input_dim = base_obs_dim + short_dim + command_dim + cnn_out_dim
+        # MLP input: short_hist + ref + command + CNN(long_hist)
+        mlp_input_dim = self.short_dim + ref_dim + command_dim + cnn_out_dim
 
         self.base_net = nn.Sequential(
-            nn.Linear(base_input_dim, hidden_size),
+            nn.Linear(mlp_input_dim, hidden_size),
             nn.Tanh(),
             nn.Linear(hidden_size, hidden_size),
             nn.Tanh(),
@@ -72,64 +77,116 @@ class DualHistoryActorCritic(nn.Module):
         self.mu_head = nn.Linear(hidden_size, act_dim)
         self.v_head = nn.Linear(hidden_size, 1)
 
-        # log_std is state-independent (like in your simple ActorCritic)
+        # State-independent log_std
         self.log_std = nn.Parameter(
-            torch.full(
-                (act_dim,),
-                float(torch.log(torch.tensor(act_std)))
-            )
+            torch.full((act_dim,), float(np.log(act_std)))
         )
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-    def _split_obs(
-        self, obs: torch.Tensor
+    @classmethod
+    def from_history_env(
+        cls,
+        hist_env,  # HistoryEnv instance
+        hidden_size: int = 512,
+        act_std: float = 0.1,
+    ) -> "DualHistoryActorCritic":
+        """
+        Convenience constructor that extracts dimensions from a HistoryEnv.
+        """
+        return cls(
+            spec=hist_env.spec,
+            pair_dim=hist_env.pair_dim,
+            short_horizon=hist_env.hist_cfg.short_horizon,
+            long_horizon=hist_env.hist_cfg.long_horizon,
+            ref_dim=hist_env.obs_dims["ref"],
+            command_dim=hist_env.obs_dims["command"],
+            hidden_size=hidden_size,
+            act_std=act_std,
+        )
+
+    def _process_obs(
+        self, obs: Union[Dict[str, torch.Tensor], torch.Tensor]
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
-        obs: (B, total_obs_dim) = [base_obs | short | long | command]
+        Extract components from observation dict or convert numpy arrays.
+        Returns: (short_history, long_history, ref, command)
         """
-        B, D = obs.shape
-        base = self.base_obs_dim
-        act_dim = self.spec.act.shape[0]
-        pair_dim = self.base_obs_dim + act_dim
+        if isinstance(obs, dict):
+            short = obs["short_history"]
+            long = obs["long_history"]
+            ref = obs["ref"]
+            cmd = obs["command"]
 
-        short_dim = self.short_hist_len * pair_dim
-        long_dim = self.long_hist_len * pair_dim
+            # Convert numpy arrays to tensors if needed
+            if isinstance(short, np.ndarray):
+                short = torch.from_numpy(short).float()
+            if isinstance(long, np.ndarray):
+                long = torch.from_numpy(long).float()
+            if isinstance(ref, np.ndarray):
+                ref = torch.from_numpy(ref).float()
+            if isinstance(cmd, np.ndarray):
+                cmd = torch.from_numpy(cmd).float()
+        else:
+            # Assume flattened tensor: [short | long | ref | command]
+            if isinstance(obs, np.ndarray):
+                obs = torch.from_numpy(obs).float()
+            if obs.dim() == 1:
+                obs = obs.unsqueeze(0)
+            idx = 0
+            short = obs[:, idx:idx + self.short_dim]
+            idx += self.short_dim
+            long = obs[:, idx:idx + self.long_dim]
+            idx += self.long_dim
+            ref = obs[:, idx:idx + self.ref_dim]
+            idx += self.ref_dim
+            cmd = obs[:, idx:idx + self.command_dim]
 
-        base_obs = obs[:, :base]
-        short_hist = obs[:, base:base + short_dim]
-        long_hist = obs[:, base + short_dim:base + short_dim + long_dim]
-        cmd = obs[:, base + short_dim + long_dim:]
+        # Ensure batch dimension
+        if short.dim() == 1:
+            short = short.unsqueeze(0)
+            long = long.unsqueeze(0)
+            ref = ref.unsqueeze(0)
+            cmd = cmd.unsqueeze(0)
 
-        return base_obs, short_hist, long_hist, cmd
+        return short, long, ref, cmd
 
-    def _forward_body(self, obs: torch.Tensor) -> torch.Tensor:
+    def _encode_long_history(self, long_hist: torch.Tensor) -> torch.Tensor:
         """
-        Shared trunk: encode long history with CNN, then concatenate
-        base_obs, short_hist, command, long_emb and run through base_net.
-        Returns features h used by both policy and value heads.
+        Reshape and encode long history through CNN.
+        Input: (B, long_horizon * pair_dim)
+        Output: (B, cnn_out_dim)
         """
-        base_obs, short_hist, long_hist, cmd = self._split_obs(obs)
+        B = long_hist.shape[0]
+        # Reshape to (B, pair_dim, long_horizon) for Conv1d
+        long_reshaped = long_hist.view(B, self.long_horizon, self.pair_dim)
+        long_reshaped = long_reshaped.transpose(1, 2)  # (B, pair_dim, long_horizon)
+        return self.long_encoder(long_reshaped)
 
-        B = obs.shape[0]
-        pair_dim = self.long_channels
+    def _forward_body(
+        self, obs: Union[Dict[str, torch.Tensor], torch.Tensor]
+    ) -> torch.Tensor:
+        """
+        Shared trunk:
+        1. Encode long history with CNN
+        2. Concatenate: short_hist + ref + command + long_embedding
+        3. Pass through MLP
+        Returns features h for policy and value heads.
+        """
+        short, long, ref, cmd = self._process_obs(obs)
 
-        # reshape long_hist to (B, C, T)
-        long_hist_reshaped = long_hist.view(B, pair_dim, self.long_steps)
-        long_emb = self.long_encoder(long_hist_reshaped)
+        # Encode long history
+        long_emb = self._encode_long_history(long)
 
-        x = torch.cat([base_obs, short_hist, cmd, long_emb], dim=-1)
+        # Concatenate all components
+        x = torch.cat([short, ref, cmd, long_emb], dim=-1)
         h = self.base_net(x)
         return h
 
-    # ------------------------------------------------------------------
-    # The _dist method PPO needs
-    # ------------------------------------------------------------------
-    def _dist(self, obs: torch.Tensor):
+    def _dist(
+        self, obs: Union[Dict[str, torch.Tensor], torch.Tensor]
+    ) -> Tuple[D.Normal, torch.Tensor]:
         """
-        Construct action distribution and return (dist, features).
-        Matches the pattern used by ActorCritic so PPO can call it.
+        Construct action distribution.
+        Returns: (distribution, features)
         """
         h = self._forward_body(obs)
         mu = torch.tanh(self.mu_head(h))
@@ -137,36 +194,39 @@ class DualHistoryActorCritic(nn.Module):
         dist = D.Normal(mu, std)
         return dist, h
 
-    # ------------------------------------------------------------------
-    # High-level API: forward / act / value
-    # ------------------------------------------------------------------
     def forward(
-        self, obs: torch.Tensor
+        self, obs: Union[Dict[str, torch.Tensor], torch.Tensor]
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
-        Returns mu, value, log_std (shared across batch).
-        Mainly useful if you want to use it directly.
+        Returns: (mu, value, log_std)
         """
         h = self._forward_body(obs)
         mu = torch.tanh(self.mu_head(h))
         value = self.v_head(h).squeeze(-1)
         return mu, value, self.log_std
 
-    def act(self, obs: torch.Tensor, deterministic: bool = False):
+    def act(
+        self,
+        obs: Union[Dict[str, torch.Tensor], torch.Tensor],
+        deterministic: bool = False,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        For rollout: returns (action, log_prob)
+        Sample action for rollout.
+        Returns: (action, log_prob)
         """
         dist, _ = self._dist(obs)
         if deterministic:
             action = dist.loc
         else:
             action = dist.rsample()
-        logp = dist.log_prob(action).sum(-1)
-        return action, logp
+        log_prob = dist.log_prob(action).sum(-1)
+        return action, log_prob
 
-    def value(self, obs: torch.Tensor):
+    def value(
+        self, obs: Union[Dict[str, torch.Tensor], torch.Tensor]
+    ) -> torch.Tensor:
         """
-        Value function V(s)
+        Value function V(s).
         """
         h = self._forward_body(obs)
         return self.v_head(h).squeeze(-1)

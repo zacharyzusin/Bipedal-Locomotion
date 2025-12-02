@@ -144,13 +144,10 @@ def create_app(
                         lookat=cam.lookat,
                     )
 
-                obs_t = torch.as_tensor(
-                    obs, dtype=torch.float32, device=device
-                ).unsqueeze(0)
                 with torch.no_grad():
-                    action_t, _ = policy.act(obs_t, deterministic=True)
-                action = action_t.squeeze(0).cpu().numpy()
+                    action, _ = policy.act(obs, deterministic=True)
 
+                action = action.squeeze(0).cpu().numpy()
                 step_res = env.step(action)
                 
                 # --- handle done & reset policy too ---

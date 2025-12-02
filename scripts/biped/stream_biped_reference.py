@@ -22,18 +22,20 @@ from tasks.biped.done import done as done
 def make_env() -> MujocoEnv:
     cfg = MujocoEnvConfig(
         xml_path="assets/biped/biped.xml",
-        episode_length=5_000,
+        episode_length=4096,
         frame_skip=5,
-        ctrl_scale=0.1,
+        pd_cfg=PDConfig(kp=5.0, kd=1.0, torque_limit=1.0),
         reset_noise_scale=0.01,
         render=True,
         reward_fn=reward,
         done_fn=done,
         width=640,
         height=480,
-        hip_site="base",
+        base_site="base",
         left_foot_site="left_foot_ik",
         right_foot_site="right_foot_ik",
+        path=f"recordings/biped_reference_recording_{4096}.npz",
+        record_joints=True,
     )
     return MujocoEnv(cfg)
 
@@ -65,28 +67,14 @@ def make_policy(env: MujocoEnv):
     )
 
     pd_cfg = PDConfig(
-        kp=50.0,
+        kp=5.0,
         kd=1.0,
         torque_limit=None,
-    )
-
-    joint_map = WalkerJointMap(
-        left=LegJointIndices(
-            hip=7,
-            knee=8,
-            ankle=9,
-        ),
-        right=LegJointIndices(
-            hip=10,
-            knee=11,
-            ankle=12,
-        ),
     )
 
     return ReferenceWalkerPolicy(
         env=env,
         gait_params=gait_params,
-        joint_map=joint_map,
         left_leg_geom=leg_geom_left,
         right_leg_geom=leg_geom_right,
         pd_config=pd_cfg,

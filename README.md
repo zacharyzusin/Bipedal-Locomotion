@@ -1,3 +1,9 @@
+# todo
+# debug reward
+# inverse kinematics for foot sole
+# reference policy should provide joint positions and not abolute positions
+# reward pelvis
+
 
 sudo apt update
 sudo apt install -y \

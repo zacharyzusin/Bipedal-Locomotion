@@ -14,13 +14,15 @@ from training.mp_on_policy import (
 from tasks.biped.reward import reward
 from tasks.biped.done import done
 
+from control.pd import PDConfig
+
 
 def make_env() -> MujocoEnv:
     cfg = MujocoEnvConfig(
         xml_path="assets/biped/biped.xml",
         episode_length=5_000,
         frame_skip=5,
-        ctrl_scale=0.1,
+        pd_cfg=PDConfig(kp=5.0, kd=1.0, torque_limit=1.0),
         reward_fn=reward,
         done_fn=done,
         reset_noise_scale=0.0,

@@ -41,10 +41,16 @@ class ActorCritic(nn.Module):
 
         self.value_head = nn.Linear(last, 1)
 
+    def _concat_obs(self, obs: dict) -> torch.Tensor:
+        for k, v in obs.items():
+            obs[k] = torch.as_tensor(v, dtype=torch.float32)
+        return torch.cat([obs[k] for k in sorted(obs.keys())], dim=-1)
+
     def _forward_body(self, obs: torch.Tensor) -> torch.Tensor:
         return self.body(obs)
 
     def _dist(self, obs: torch.Tensor) -> Tuple[torch.distributions.Normal, torch.Tensor]:
+        obs = self._concat_obs(obs)
         x = self._forward_body(obs)
         mean = self.mean_head(x)
         std = self.log_std.exp()

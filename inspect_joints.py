@@ -16,7 +16,6 @@ def inspect_joints(xml_path: str):
         xml_path=xml_path,
         episode_length=100,
         frame_skip=1,
-        ctrl_scale=1.0,
         render=False,
     )
     env = MujocoEnv(cfg)

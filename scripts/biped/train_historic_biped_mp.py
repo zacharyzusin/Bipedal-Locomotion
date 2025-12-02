@@ -20,7 +20,6 @@ from policies.reference_policy import (
     LegJointIndices,
     ReferenceWalkerPolicy,
 )
-from control.ik_2r import Planar2RLegConfig
 from control.pd import PDConfig
 
 from tasks.biped.historic_reward import make_historic_reward
@@ -34,66 +33,22 @@ from tasks.biped.done import done
 def make_base_env() -> MujocoEnv:
     cfg = MujocoEnvConfig(
         xml_path="assets/biped/biped.xml",
-        episode_length=2500,
+        episode_length=4096,
         frame_skip=5,
-        ctrl_scale=0.1,
+        pd_cfg = PDConfig(kp=5.0, kd=1.0),
         reset_noise_scale=0.01,
         render=False,
         done_fn=done,
-        hip_site="base",
+        base_site="base",
         left_foot_site="left_foot_ik",
         right_foot_site="right_foot_ik",
         reward_fn=None,  # set this below
     )
     env = MujocoEnv(cfg)
 
-    # ---------------------------
-    # Reference gait controller
-    # ---------------------------
-    gait_params = GaitParams(
-        step_length=0.2,
-        step_height=0.05,
-        cycle_duration=1.0,
-    )
-
-    joint_map = WalkerJointMap(
-        left=LegJointIndices(
-            hip=7,    # index of left hip in qpos
-            knee=8,   # index of left knee in qpos
-            ankle=9,  # index of left ankle in qpos
-        ),
-        right=LegJointIndices(
-            hip=10,   # index of right hip
-            knee=11,  # index of right knee
-            ankle=12, # index of right ankle
-        ),
-    )
-
-    # Planar leg geometry (meters)
-    left_leg_geom = Planar2RLegConfig(L1=0.05, L2=0.058)
-    right_leg_geom = Planar2RLegConfig(L1=0.05, L2=0.058)
-
-    pd_cfg = PDConfig(kp=50.0, kd=1.0)
-
-    # Same reference controller you use for streaming
-    ref_policy = ReferenceWalkerPolicy(
-        env=env,
-        gait_params=gait_params,
-        joint_map=joint_map,
-        left_leg_geom=left_leg_geom,
-        right_leg_geom=right_leg_geom,
-        pd_config=pd_cfg,
-    )
-
-    # Reference joint trajectory q_ref(t)
-    def ref_q_fn(time_sec: float) -> np.ndarray:
-        return ref_policy.compute_q_ref(time_sec)
-
     reward_fn = make_historic_reward(
         env=env,
-        ref_q_fn=ref_q_fn,
-        torso_body="hips",  # adapt the body name if needed
-        v_des=0.6,          # desired forward speed
+        v_des=0.02,
     )
     env.set_reward_fn(reward_fn)
 
@@ -108,8 +63,9 @@ def env_factory() -> HistoryEnv:
     base = make_base_env()
 
     hist_cfg = HistoryConfig(
-        short_horizon=4,   # K_short
-        long_horizon=66,   # K_long
+        short_horizon=4,
+        long_horizon=66,
+        reference_path="recordings/biped_reference_recording_4096.npz",
     )
 
     env = HistoryEnv(
@@ -118,13 +74,9 @@ def env_factory() -> HistoryEnv:
         command_dim=4,     # [qdot_x^d, qdot_y^d, q_z^d, q_psi^d]
     )
 
-    # For now: fixed command; you can randomize per episode later
-    if base.hip_height is None:
-        base_h = 1.0
-    else:
-        base_h = base.hip_height
+    base_h = base.hip_height
 
-    cmd = np.array([0.6, 0.0, base_h, 0.0], dtype=np.float32)
+    cmd = np.array([0.02, 0.0, base_h, 0.0], dtype=np.float32)
     env.set_command(cmd)
 
     return env
@@ -146,22 +98,17 @@ def policy_factory(env: HistoryEnv):
     long_h = 66
 
     act_dim = env.spec.act.shape[0]
-    A = act_dim
-    Ks = short_h
-    Kl = long_h
+    pair_dim = env.base_obs_dim + act_dim
     cmd_dim = 4
-    total = env.spec.obs.shape[0]
 
-    # total = B + (Ks + Kl) * (B + A) + cmd_dim
-    # => total - cmd_dim = B * (1 + Ks + Kl) + (Ks + Kl) * A
-    B = (total - cmd_dim - (Ks + Kl) * A) / (1 + Ks + Kl)
-    base_obs_dim = int(B)
-
+    ref_dim = 18   # lookahead joint positions only
+        
     return DualHistoryActorCritic(
         spec=env.spec,
-        base_obs_dim=base_obs_dim,
-        short_hist_len=short_h,
-        long_hist_len=long_h,
+        pair_dim=pair_dim,
+        short_horizon=short_h,
+        long_horizon=long_h,
+        ref_dim=ref_dim,
         command_dim=cmd_dim,
         hidden_size=512,
         act_std=0.2,
@@ -181,7 +128,7 @@ def make_ppo(policy):
         clip_ratio=0.2,
         lr=3e-4,
         train_iters=80,
-        batch_size=512,   # larger batch since we aggregate across workers
+        batch_size=256,   # larger batch since we aggregate across workers
         value_coef=0.5,
         entropy_coef=0.00,
         max_grad_norm=0.5,
@@ -199,9 +146,9 @@ def main():
 
     train_cfg = MPTrainConfig(
         total_steps=1_000_000,
-        horizon=2048,
-        num_workers=10,
-        log_interval=10,
+        horizon=4096,
+        num_workers=4,
+        log_interval=1,
         device="cpu",
         checkpoint_path="checkpoints/biped_historic_ppo_mp.pt",
     )

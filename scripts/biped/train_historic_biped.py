@@ -21,7 +21,6 @@ from control.pd import PDConfig
 from tasks.biped.historic_reward import make_historic_reward
 from tasks.biped.done import done
 
-
 # ---------------------------------------------------------------------
 # 1) Base MuJoCo env + reference policy + reward
 # ---------------------------------------------------------------------
@@ -29,13 +28,13 @@ from tasks.biped.done import done
 def make_base_env() -> MujocoEnv:
     cfg = MujocoEnvConfig(
         xml_path="assets/biped/biped.xml",
-        episode_length=2500,
+        episode_length=4096,
         frame_skip=5,
-        ctrl_scale=0.1,
+        pd_cfg=PDConfig(kp=5.0, kd=1.0, torque_limit=1.0),
         reset_noise_scale=0.01,
         render=False,
         done_fn=done,
-        hip_site="base",
+        base_site="base",
         left_foot_site="left_foot_ik",
         right_foot_site="right_foot_ik",
         reward_fn=None, # set this below
@@ -46,9 +45,9 @@ def make_base_env() -> MujocoEnv:
     # Reference gait controller
     # ---------------------------
     gait_params = GaitParams(
-        step_length=0.2,
-        step_height=0.05,
-        cycle_duration=1.0,
+        step_length=0.02,
+        step_height=0.01,
+        cycle_duration=1.25,
     )
 
     joint_map = WalkerJointMap(
@@ -67,7 +66,7 @@ def make_base_env() -> MujocoEnv:
     left_leg_geom = Planar2RLegConfig(L1=0.05, L2=0.058)
     right_leg_geom = Planar2RLegConfig(L1=0.05, L2=0.058)
 
-    pd_cfg = PDConfig(kp=50.0, kd=1.0)
+    pd_cfg = PDConfig(kp=5.0, kd=1.0)
 
     # This is the same reference controller you already use for streaming
     ref_policy = ReferenceWalkerPolicy(
@@ -172,7 +171,7 @@ def algo_factory(policy):
 
 def main():
     train_cfg = TrainConfig(
-        total_steps=250_000,
+        total_steps=2_500_000,
         horizon=2048,
         log_interval=10,
         device="cpu",

@@ -1,6 +1,7 @@
 # training/mp_on_policy.py
 from __future__ import annotations
 from dataclasses import dataclass
+from collections import defaultdict
 from typing import Callable, Dict, Any, List
 
 import multiprocessing as mp
@@ -108,6 +109,7 @@ class MultiProcessOnPolicyTrainer:
         start_time = time.time()
         total_steps = 0
         iteration = 0
+        highest_return = -np.inf
 
         try:
             while total_steps < self.cfg.total_steps:
@@ -125,16 +127,23 @@ class MultiProcessOnPolicyTrainer:
                     batches.append(batch)
 
                 combined = self._combine_batches(batches)
-                batch_steps = combined["obs"].shape[0]
+                batch_steps = combined["actions"].shape[0]
                 total_steps += batch_steps
 
                 metrics = self.algo.update(combined)
+
+                avg_return = combined["returns"].mean()
+                if avg_return > highest_return:
+                    highest_return = avg_return
+                    if self.cfg.checkpoint_path:
+                        import os
+                        os.makedirs(os.path.dirname(self.cfg.checkpoint_path), exist_ok=True)
+                        torch.save(self.policy.state_dict(), self.cfg.checkpoint_path)
 
                 if iteration % self.cfg.log_interval == 0:
                     elapsed = time.time() - start_time
                     steps_per_sec = total_steps / max(1.0, elapsed)
 
-                    avg_return = combined["returns"].mean()
                     print(
                         f"[Iter {iteration}] Steps={total_steps}  "
                         f"Steps/sec={steps_per_sec:.1f}  "
@@ -155,24 +164,18 @@ class MultiProcessOnPolicyTrainer:
             print(f"Average steps/sec:  {steps_per_sec:.1f}")
             print("==================================================")
 
-            # Save checkpoint
-            if self.cfg.checkpoint_path:
-                import os
-                os.makedirs(os.path.dirname(self.cfg.checkpoint_path), exist_ok=True)
-                torch.save(self.policy.state_dict(), self.cfg.checkpoint_path)
-
             self._stop_workers()
 
 
     # ----------------------------------------------------------------------
     # Utilities
     # ----------------------------------------------------------------------
-    def _combine_batches(self, batches: List[RolloutBatch]) -> Dict[str, np.ndarray]:
+    def _combine_batches(self, batches: List[RolloutBatch]) -> Dict[str, Any]:
         """
         - Compute values & advantages for each worker's trajectory.
         - Concatenate into a single big batch for PPO.
         """
-        all_obs = []
+        all_obs: Dict[str, list] = defaultdict(list)
         all_actions = []
         all_log_probs = []
         all_advantages = []
@@ -183,16 +186,12 @@ class MultiProcessOnPolicyTrainer:
 
         for b in batches:
             # Compute values on obs
-            obs_t = torch.as_tensor(b.obs, dtype=torch.float32, device=self.device)
             with torch.no_grad():
-                values = self.policy.value(obs_t).cpu().numpy()
-
+                values = self.policy.value(b.obs).cpu().numpy()
+            
             # Bootstrap last value from last_obs
-            last_obs_t = torch.as_tensor(
-                b.last_obs, dtype=torch.float32, device=self.device
-            ).unsqueeze(0)
             with torch.no_grad():
-                last_value = self.policy.value(last_obs_t).item()
+                last_value = self.policy.value(b.last_obs).item()
 
             adv, ret = compute_gae(
                 rewards=b.rewards,
@@ -203,20 +202,21 @@ class MultiProcessOnPolicyTrainer:
                 lam=lam,
             )
 
-            all_obs.append(b.obs)
+            for key, val in b.obs.items():
+                all_obs[key].append(val)
             all_actions.append(b.actions)
             all_log_probs.append(b.log_probs)
             all_advantages.append(adv)
             all_returns.append(ret)
 
-        obs_arr = np.concatenate(all_obs, axis=0)
+        obs_dict = {k: np.concatenate(v, axis=0) for k, v in all_obs.items()}
         act_arr = np.concatenate(all_actions, axis=0)
         logp_arr = np.concatenate(all_log_probs, axis=0)
         adv_arr = np.concatenate(all_advantages, axis=0)
         ret_arr = np.concatenate(all_returns, axis=0)
 
         return {
-            "obs": obs_arr,
+            "obs": obs_dict,
             "actions": act_arr,
             "log_probs": logp_arr,
             "advantages": adv_arr,

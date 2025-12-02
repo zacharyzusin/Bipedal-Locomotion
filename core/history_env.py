@@ -12,8 +12,10 @@ from .specs import EnvSpec, SpaceSpec
 
 @dataclass
 class HistoryConfig:
+    reference_path: str
     short_horizon: int = 4    # K_short in the paper
     long_horizon: int = 66    # K_long in the paper
+    ref_lookahead_steps: Tuple[int, ...] = (1, 4, 7)  # future reference timesteps
 
 
 class HistoryEnv(Env):
@@ -21,53 +23,67 @@ class HistoryEnv(Env):
     Wraps a base Env and augments observations with I/O history and an optional
     command vector.
 
-    Observation layout:
-        [ base_obs | short_history | long_history | command ]
-
-    where
-        short_history:  K_short * (obs_dim + act_dim)
-        long_history:   K_long  * (obs_dim + act_dim)
+    Observation dict keys:
+        - "ref": reference trajectory lookahead positions
+        - "short_history": K_short * (obs_dim + act_dim) flattened
+        - "long_history": K_long * (obs_dim + act_dim) flattened
+        - "command": command vector
     """
 
     def __init__(
         self,
         base_env: Env,
-        hist_cfg: Optional[HistoryConfig] = None,
+        hist_cfg: HistoryConfig,
         command_dim: int = 0,
     ):
         self.base_env = base_env
-        self.hist_cfg = hist_cfg or HistoryConfig()
+        self.hist_cfg = hist_cfg
         self.command_dim = command_dim
 
-        # History buffers of (obs, action)
-        self._short = deque(maxlen=self.hist_cfg.short_horizon)
-        self._long = deque(maxlen=self.hist_cfg.long_horizon)
+        # History buffers of (flattened_obs, action)
+        self._short: deque = deque(maxlen=self.hist_cfg.short_horizon)
+        self._long: deque = deque(maxlen=self.hist_cfg.long_horizon)
 
-        # Dimensions from base env
+        # Compute flattened obs dim from base env spec
+        # Base env returns dict: euler(3) + lin_vel(3) + joint_pos + joint_vel
         self.base_obs_dim = base_env.spec.obs.shape[0]
         self.act_dim = base_env.spec.act.shape[0]
-
         self.pair_dim = self.base_obs_dim + self.act_dim
+
+        # Load reference data
+        self.r_data = np.load(self.hist_cfg.reference_path)
+        self.time = self.r_data["time"]
+        self.ref_qpos_dim = self.r_data["qpos"].shape[1]
+
+        # Compute observation space dimensions
         short_dim = self.hist_cfg.short_horizon * self.pair_dim
         long_dim = self.hist_cfg.long_horizon * self.pair_dim
+        ref_dim = len(self.hist_cfg.ref_lookahead_steps) * self.ref_qpos_dim
 
-        total_obs_dim = self.base_obs_dim + short_dim + long_dim + command_dim
+        # Total flattened obs dim for spec
+        total_obs_dim = ref_dim + short_dim + long_dim + command_dim
 
         self.spec = EnvSpec(
             obs=SpaceSpec(shape=(total_obs_dim,), dtype=np.float32),
             act=base_env.spec.act,
         )
 
-        # Current command (for now fixed during an episode; can be changed)
-        if command_dim > 0:
-            self._command = np.zeros(command_dim, dtype=np.float32)
-        else:
-            self._command = np.zeros(0, dtype=np.float32)
+        # Store individual dims for reference
+        self.obs_dims = {
+            "ref": ref_dim,
+            "short_history": short_dim,
+            "long_history": long_dim,
+            "command": command_dim,
+        }
 
-        # Just forward episode counter if needed; otherwise keep local
+        # Current command
+        self._command = np.zeros(command_dim, dtype=np.float32)
         self._t = 0
 
-    # Small convenience: dt passthrough if base_env has it (MujocoEnv does)
+    def index(self, target_time: float) -> int:
+        """Find the index of the closest time in the reference data."""
+        return int(np.argmin(np.abs(self.time - target_time)))
+
     @property
     def dt(self) -> float:
         return getattr(self.base_env, "dt", 0.0)
@@ -76,72 +92,92 @@ class HistoryEnv(Env):
         assert self.command_dim == command.shape[0]
         self._command = command.astype(np.float32)
 
-    def _build_aug_obs(self, obs: np.ndarray) -> np.ndarray:
-        # Short history
-        short_list = list(self._short)
-        if len(short_list) < self.hist_cfg.short_horizon:
-            pad = self.hist_cfg.short_horizon - len(short_list)
-            short_list = [(np.zeros(self.base_obs_dim, dtype=np.float32),
-                           np.zeros(self.act_dim, dtype=np.float32))] * pad + short_list
+    def _flatten_obs(self, obs_dict: Dict[str, np.ndarray]) -> np.ndarray:
+        """Flatten the base env observation dict into a single array."""
+        # Consistent ordering: euler, lin_vel, joint_pos, joint_vel
+        return np.concatenate([
+            obs_dict["euler"],
+            obs_dict["lin_vel"],
+            obs_dict["joint_pos"],
+            obs_dict["joint_vel"],
+        ], axis=0).astype(np.float32)
 
-        short_flat = []
-        for o, a in short_list:
-            short_flat.append(o)
-            short_flat.append(a)
-        short_flat = np.concatenate(short_flat, axis=0)
+    def _get_ref_obs(self, time_sec: float) -> np.ndarray:
+        """Get reference positions at future lookahead steps."""
+        r_idx = self.index(time_sec)
+        max_idx = len(self.time) - 1
 
-        # Long history
-        long_list = list(self._long)
-        if len(long_list) < self.hist_cfg.long_horizon:
-            pad = self.hist_cfg.long_horizon - len(long_list)
-            long_list = [(np.zeros(self.base_obs_dim, dtype=np.float32),
-                          np.zeros(self.act_dim, dtype=np.float32))] * pad + long_list
+        ref_positions = []
+        for offset in self.hist_cfg.ref_lookahead_steps:
+            future_idx = min(r_idx + offset, max_idx)
+            joint_pos = self.r_data["qpos"][future_idx]
+            ref_positions.append(joint_pos)
 
-        long_flat = []
-        for o, a in long_list:
-            long_flat.append(o)
-            long_flat.append(a)
-        long_flat = np.concatenate(long_flat, axis=0)
+        return np.concatenate(ref_positions, axis=0).astype(np.float32)
 
-        return np.concatenate(
-            [obs.astype(np.float32), short_flat, long_flat, self._command],
-            axis=0,
-        )
+    def _flatten_history(self, history: deque, max_len: int) -> np.ndarray:
+        """Flatten history buffer, padding with zeros if needed."""
+        hist_list = list(history)
+        pad_count = max_len - len(hist_list)
 
-    def reset(self, seed: int | None = None) -> np.ndarray:
+        if pad_count > 0:
+            zero_pair = np.zeros(self.pair_dim, dtype=np.float32)
+            hist_list = [zero_pair] * pad_count + hist_list
+
+        return np.concatenate(hist_list, axis=0).astype(np.float32)
+
+    def _build_obs_dict(self) -> Dict[str, np.ndarray]:
+        """Build the augmented observation dictionary."""
+        return {
+            "ref": self._get_ref_obs(self._t * self.dt),
+            "short_history": self._flatten_history(self._short, self.hist_cfg.short_horizon),
+            "long_history": self._flatten_history(self._long, self.hist_cfg.long_horizon),
+            "command": self._command.copy(),
+        }
+
+    def reset(self, seed: int | None = None) -> Dict[str, np.ndarray]:
         self._short.clear()
         self._long.clear()
         self._t = 0
 
-        base_obs = self.base_env.reset(seed=seed)
-        # At the very first step, history is all zeros
-        aug_obs = self._build_aug_obs(base_obs)
-        return aug_obs
+        self.base_env.reset(seed=seed)
+        return self._build_obs_dict()
 
     def step(self, action: np.ndarray) -> StepResult:
-        # Call base env
         res = self.base_env.step(action)
         self._t += 1
 
-        # Append new (obs, action) to history
-        # Note: we store base obs, not augmented
-        self._short.append((res.obs.copy(), action.copy()))
-        self._long.append((res.obs.copy(), action.copy()))
+        # Flatten base obs and concatenate with action for history
+        flat_obs = self._flatten_obs(res.obs)
+        history_pair = np.concatenate([flat_obs, action.copy()], axis=0)
 
-        aug_obs = self._build_aug_obs(res.obs)
+        # Store in history buffers
+        self._short.append(history_pair)
+        self._long.append(history_pair)
 
-        # Forward info but keep obs replaced by augmented one
-        info = dict(res.info)
-        info["base_obs"] = res.obs  # optional, handy for debugging
+        obs_dict = self._build_obs_dict()
 
         return StepResult(
-            obs=aug_obs,
+            obs=obs_dict,
             reward=res.reward,
             done=res.done,
-            info=info,
-            # If your StepResult has 'frame', forward that too; if not, just omit
+            info=res.info,
             frame=getattr(res, "frame", None),
         )
 
     def close(self) -> None:
         self.base_env.close()
+
+    def set_camera(
+        self,
+        distance: float,
+        azimuth: float,
+        elevation: float,
+        lookat: tuple[float, float, float],
+    ):
+        self.base_env.set_camera(
+            distance=distance,
+            azimuth=azimuth,
+            elevation=elevation,
+            lookat=lookat,
+        )

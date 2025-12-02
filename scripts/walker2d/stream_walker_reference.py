@@ -24,7 +24,7 @@ def make_env() -> MujocoEnv:
         xml_path="assets/walker2d/walker2d.xml",
         episode_length=5_000,
         frame_skip=5,
-        ctrl_scale=0.1,
+        pd_cfg=PDConfig(kp=5.0, kd=1.0, torque_limit=1.0),
         reset_noise_scale=0.01,
         render=True,
         reward_fn=reward,
@@ -58,9 +58,9 @@ def make_policy(env: MujocoEnv):
     )
 
     pd_cfg = PDConfig(
-        kp=50.0,
+        kp=5.0,
         kd=1.0,
-        torque_limit=0.5,
+        torque_limit=0.1,
     )
 
     joint_map = WalkerJointMap(

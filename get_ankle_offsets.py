@@ -8,7 +8,6 @@ def make_env() -> MujocoEnv:
         xml_path=xml_path,
         episode_length=5_000,
         frame_skip=5,
-        ctrl_scale=0.1,
         reset_noise_scale=0.01,
         render=True,
         width=640,

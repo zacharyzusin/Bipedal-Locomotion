@@ -6,4 +6,4 @@ def done(model: mujoco.MjModel, data: mujoco.MjData, t: int) -> bool:
     height = torso_pos[2]
 
     # Terminate if torso falls too low
-    return height < 0.8
+    return height < 1.15

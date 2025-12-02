@@ -12,12 +12,14 @@ from training.on_policy import OnPolicyTrainer, TrainConfig
 from tasks.walker2d.reward import reward
 from tasks.walker2d.done import done
 
+from control.pd import PDConfig
+
 def make_env():
     cfg = MujocoEnvConfig(
         xml_path="assets/walker2d/walker2d.xml",
         episode_length=1000,
         frame_skip=5,
-        ctrl_scale=1.0,
+        pd_cfg=PDConfig(kp=5.0, kd=1.0, torque_limit=1.0),
         reward_fn=reward,
         done_fn=done,
         render=False,

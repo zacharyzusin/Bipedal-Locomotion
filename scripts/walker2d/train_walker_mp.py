@@ -14,13 +14,15 @@ from training.mp_on_policy import (
 from tasks.walker2d.reward import reward
 from tasks.walker2d.done import done
 
+from control.pd import PDConfig
+
 
 def make_env() -> MujocoEnv:
     cfg = MujocoEnvConfig(
         xml_path="assets/walker2d/walker2d.xml",
         episode_length=5_000,
         frame_skip=5,
-        ctrl_scale=0.1,
+        pd_cfg = PDConfig(kp=5.0, kd=1.0, torque_limit=1.0),
         reward_fn=reward,
         done_fn=done,
         reset_noise_scale=0.0,
@@ -55,7 +57,7 @@ def main():
     train_cfg = MPTrainConfig(
         total_steps=2_000_000,
         horizon=1024,
-        num_workers=7,
+        num_workers=4,
         log_interval=10,
         device="cpu",
         checkpoint_path="checkpoints/walker_ppo_mp.pt",

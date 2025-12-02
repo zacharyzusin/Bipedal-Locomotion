@@ -12,13 +12,15 @@ from training.on_policy import OnPolicyTrainer, TrainConfig
 from tasks.biped.reward import reward
 from tasks.biped.done import done
 
+from control.pd import PDConfig
+
 def make_env():
     # Point to your MuJoCo walker model
     cfg = MujocoEnvConfig(
         xml_path="assets/biped/biped.xml",
         episode_length=1000,
         frame_skip=5,
-        ctrl_scale=1.0,
+        pd_cfg=PDConfig(kp=5.0, kd=1.0, torque_limit=1.0),
         reward_fn=reward,
         done_fn=done,
         render=False,

@@ -55,12 +55,16 @@ class PPO:
         self.device = device
         self.optimizer = Adam(self.actor_critic.parameters(), lr=cfg.lr)
 
-    def update(self, batch: Dict[str, np.ndarray]) -> Dict[str, Any]:
+    def update(self, batch: Dict[str, Any]) -> Dict[str, Any]:
         """
         batch dict has keys:
-        'obs', 'actions', 'log_probs', 'returns', 'advantages'
+        'obs' (dict of arrays), 'actions', 'log_probs', 'returns', 'advantages'
         """
-        obs = torch.as_tensor(batch["obs"], dtype=torch.float32, device=self.device)
+        # Convert obs dict to tensors
+        obs = {
+            k: torch.as_tensor(v, dtype=torch.float32, device=self.device)
+            for k, v in batch["obs"].items()
+        }
         actions = torch.as_tensor(batch["actions"], dtype=torch.float32, device=self.device)
         old_log_probs = torch.as_tensor(batch["log_probs"], dtype=torch.float32, device=self.device)
         returns = torch.as_tensor(batch["returns"], dtype=torch.float32, device=self.device)
@@ -68,7 +72,8 @@ class PPO:
 
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-        num_samples = obs.shape[0]
+        # Get num_samples from any obs key
+        num_samples = next(iter(obs.values())).shape[0]
         batch_size = self.cfg.batch_size
 
         metrics = {
@@ -84,7 +89,7 @@ class PPO:
                 end = start + batch_size
                 mb_idx = idx[start:end]
 
-                mb_obs = obs[mb_idx]
+                mb_obs = {k: v[mb_idx] for k, v in obs.items()}
                 mb_actions = actions[mb_idx]
                 mb_old_logp = old_log_probs[mb_idx]
                 mb_returns = returns[mb_idx]

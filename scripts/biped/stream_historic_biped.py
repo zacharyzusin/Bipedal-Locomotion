@@ -29,13 +29,13 @@ from tasks.biped.done import done
 def make_base_env(render: bool = True) -> MujocoEnv:
     cfg = MujocoEnvConfig(
         xml_path="assets/biped/biped.xml",
-        episode_length=5_000,
+        episode_length=4_096,
         frame_skip=5,
-        ctrl_scale=0.1,
-        reset_noise_scale=0.01,
+        pd_cfg=PDConfig(kp=5.0, kd=1.0, torque_limit=1.0),
+        reset_noise_scale=0.0,
         render=render,
         done_fn=done,
-        hip_site="base",
+        base_site="base",
         left_foot_site="left_foot_ik",
         right_foot_site="right_foot_ik",
         reward_fn=None,   # set below
@@ -48,9 +48,9 @@ def make_base_env(render: bool = True) -> MujocoEnv:
     # Reference gait controller
     # ---------------------------
     gait_params = GaitParams(
-        step_length=0.2,
-        step_height=0.05,
-        cycle_duration=1.0,
+        step_length=0.02,
+        step_height=0.01,
+        cycle_duration=1.25,
     )
 
     joint_map = WalkerJointMap(
@@ -66,11 +66,25 @@ def make_base_env(render: bool = True) -> MujocoEnv:
         ),
     )
 
-    # Leg geometry (meters)
-    left_leg_geom = Planar2RLegConfig(L1=0.05, L2=0.058)
-    right_leg_geom = Planar2RLegConfig(L1=0.05, L2=0.058)
+    left_leg_geom = Planar2RLegConfig(
+        L1=0.05,   # thigh length [m]
+        L2=0.058,   # shank length [m]
+        knee_sign=1.0,
+        hip_offset=np.pi/2,
+        knee_offset=0,
+        ankle_offset=-np.pi/2,
 
-    pd_cfg = PDConfig(kp=50.0, kd=1.0)
+    )
+    right_leg_geom = Planar2RLegConfig(
+        L1=0.05,
+        L2=0.058,
+        knee_sign=1.0,
+        hip_offset=np.pi/2,
+        knee_offset=0,
+        ankle_offset=-np.pi/2,
+    )
+
+    pd_cfg = PDConfig(kp=5.0, kd=1.0)
 
     ref_policy = ReferenceWalkerPolicy(
         env=env,
@@ -87,8 +101,8 @@ def make_base_env(render: bool = True) -> MujocoEnv:
     reward_fn = make_historic_reward(
         env=env,
         ref_q_fn=ref_q_fn,
-        torso_body="hips",
-        v_des=0.6,
+        base_site="base",
+        v_des=0.02,
     )
     env.set_reward_fn(reward_fn)
 
@@ -113,13 +127,9 @@ def make_env() -> HistoryEnv:
         command_dim=4,  # [qdot_x^d, qdot_y^d, q_z^d, q_psi^d]
     )
 
-    # Same fixed command as training
-    if base.hip_height is None:
-        base_h = 1.0
-    else:
-        base_h = base.hip_height
+    base_h = base.hip_height
 
-    cmd = np.array([0.6, 0.0, base_h, 0.0], dtype=np.float32)
+    cmd = np.array([0.02, 0.0, base_h, 0.0], dtype=np.float32)
     env.set_command(cmd)
 
     return env

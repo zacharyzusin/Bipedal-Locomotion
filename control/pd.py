@@ -23,7 +23,6 @@ class PDController:
     def __init__(self, cfg: PDConfig):
         self.kp = np.array(cfg.kp, dtype=np.float32) if not np.isscalar(cfg.kp) else cfg.kp
         self.kd = np.array(cfg.kd, dtype=np.float32) if not np.isscalar(cfg.kd) else cfg.kd
-
         if cfg.torque_limit is None:
             self.torque_limit = None
         else:
