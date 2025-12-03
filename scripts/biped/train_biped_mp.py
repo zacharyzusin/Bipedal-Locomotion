@@ -41,7 +41,7 @@ def make_ppo(actor_critic):
         lam=0.98,
         clip_ratio=0.2,
         lr=3e-4,
-        train_iters=80,
+        train_iters=40,
         batch_size=512,   # larger batch since we're combining workers
         value_coef=0.5,
         entropy_coef=0.00,
@@ -60,7 +60,7 @@ def main():
         num_workers=7,
         log_interval=10,
         device="cpu",
-        checkpoint_path="checkpoints/walker_ppo_mp.pt",
+        checkpoint_path="checkpoints/biped_ppo_mp.pt",
     )
 
     trainer = MultiProcessOnPolicyTrainer(

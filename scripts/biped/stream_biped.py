@@ -35,7 +35,7 @@ def make_policy(env):
 
 
 def main():
-    checkpoint_path = "checkpoints/walker_ppo_mp.pt"  # same as in training
+    checkpoint_path = "checkpoints/biped_ppo_mp.pt"  # same as in training
     device = "cpu"
 
     app = create_app(
