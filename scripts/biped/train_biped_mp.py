@@ -37,17 +37,18 @@ def make_policy(env):
 
 def make_ppo(actor_critic):
     ppo_cfg = PPOConfig(
-        gamma=0.995,
-        lam=0.98,
-        clip_ratio=0.2,
-        lr=3e-4,
+        gamma=0.99,         # slightly more myopic, more stable for bipeds
+        lam=0.90,           # less variance & less overestimation in GAE
+        clip_ratio=0.1,     # smaller, gentler policy updates
+        lr=1e-4,            # smaller LR to avoid destroying good gaits
         train_iters=80,
-        batch_size=512,   # larger batch since we're combining workers
+        batch_size=512,
         value_coef=0.5,
-        entropy_coef=0.00,
+        entropy_coef=0.0005,  # tiny bit of exploration, no entropy explosion
         max_grad_norm=0.5,
     )
     return PPO(actor_critic, ppo_cfg, device="cpu")
+
 
 
 def main():
@@ -55,12 +56,12 @@ def main():
     mp.set_start_method("spawn", force=True)
 
     train_cfg = MPTrainConfig(
-        total_steps=5_000_000,
+        total_steps=3_000_000,
         horizon=1024,
         num_workers=7,
         log_interval=10,
         device="cpu",
-        checkpoint_path="checkpoints/walker_ppo_mp.pt",
+        checkpoint_path="checkpoints/biped_new.pt",
     )
 
     trainer = MultiProcessOnPolicyTrainer(

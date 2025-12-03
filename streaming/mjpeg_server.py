@@ -19,6 +19,19 @@ from PIL import Image
 from core.base_env import Env
 from policies.actor_critic import ActorCritic
 
+def to_python(obj):
+    """Recursively convert numpy types into JSON-serializable Python types."""
+    if isinstance(obj, np.generic):
+        return obj.item()  # numpy scalar → Python float/int
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()  # numpy array → list
+    if isinstance(obj, dict):
+        return {k: to_python(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [to_python(x) for x in obj]
+    return obj
+
+
 @dataclass
 class StepStats:
     t: int
@@ -190,7 +203,8 @@ def create_app(
 
     @app.get("/stats")
     async def get_stats():
-        return JSONResponse(state.to_dict())
+        safe = to_python(state.to_dict())
+        return JSONResponse(safe)
 
     @app.get("/camera")
     async def get_camera():
