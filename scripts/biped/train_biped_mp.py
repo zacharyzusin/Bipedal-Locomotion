@@ -44,7 +44,7 @@ def make_ppo(actor_critic):
         train_iters=80,
         batch_size=512,
         value_coef=0.5,
-        entropy_coef=0.0005,  # tiny bit of exploration, no entropy explosion
+        entropy_coef=0.0,  # tiny bit of exploration, no entropy explosion
         max_grad_norm=0.5,
     )
     return PPO(actor_critic, ppo_cfg, device="cpu")
@@ -56,7 +56,7 @@ def main():
     mp.set_start_method("spawn", force=True)
 
     train_cfg = MPTrainConfig(
-        total_steps=3_000_000,
+        total_steps=5_000_000,
         horizon=1024,
         num_workers=7,
         log_interval=10,

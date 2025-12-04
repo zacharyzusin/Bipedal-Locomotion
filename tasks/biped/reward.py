@@ -4,23 +4,29 @@ import mujoco
 import numpy as np
 
 
-def _quat_to_pitch(quat) -> float:
+def _quat_to_euler(quat: np.ndarray) -> tuple[float, float, float]:
     """
-    Extract torso pitch (rotation about the Y-axis) from a wxyz quaternion.
-    Positive = leaning forward.
+    Convert quaternion (w, x, y, z) to Euler angles (roll, pitch, yaw).
+    Returns Python floats.
     """
     w, x, y, z = [float(q) for q in quat]
+
+    # Roll (x-axis)
+    sinr_cosp = 2.0 * (w * x + y * z)
+    cosr_cosp = 1.0 - 2.0 * (x * x + y * y)
+    roll = np.arctan2(sinr_cosp, cosr_cosp)
+
+    # Pitch (y-axis)
     sinp = 2.0 * (w * y - z * x)
     sinp = float(np.clip(sinp, -1.0, 1.0))
-    return float(np.arcsin(sinp))
+    pitch = np.arcsin(sinp)
 
+    # Yaw (z-axis)
+    siny_cosp = 2.0 * (w * z + x * y)
+    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+    yaw = np.arctan2(siny_cosp, cosy_cosp)
 
-def _clamp01(x: float) -> float:
-    if x <= 0.0:
-        return 0.0
-    if x >= 1.0:
-        return 1.0
-    return float(x)
+    return float(roll), float(pitch), float(yaw)
 
 
 def reward(
@@ -29,129 +35,86 @@ def reward(
     t: float,
     dt: float,
     action: np.ndarray,
-    #
-    # Tunable parameters — these are good defaults for early walking.
-    #
-    v_des: float = 0.25,        # target walking speed
+
+    # ---- walking speed target ----
+    v_des: float = 0.35,
+    vel_alpha: float = 3.0,
+
+    # ---- penalties & bonuses ----
+    upright_weight: float = 2.0,
+    bounce_weight: float = 0.5,
     ctrl_cost_weight: float = 0.001,
-    acc_cost_weight: float = 0.01,  # lighter: allows natural COM shifts
-    fall_penalty: float = -5.0,
+    alive_bonus: float = 0.5,
+    fall_height_threshold: float = 0.10,
 ) -> tuple[float, dict]:
     """
-    Combined reward promoting stable and natural walking:
-      • Standing upright is okay
-      • Walking upright is best
-      • Falling is bad
-      • Small forward velocity helps exploration
-      • Torso acceleration penalty prevents rope-pull exploit
+    Simple reward that produces stable walking:
+
+        R = speed_reward + alive - ctrl_cost - upright_cost - bounce_cost
+
+    - speed_reward encourages walking at target v_des (no running)
+    - upright_cost keeps torso vertical
+    - bounce_cost reduces vertical hopping (prevents pogo-running)
+    - ctrl_cost keeps movements moderate
     """
 
-    # ------------------------------------------------------------------
-    # 1) Base measurements
-    # ------------------------------------------------------------------
-    forward_vel = float(data.qvel[0])    # x-velocity of root body
+    # ---------------------------------------------------------
+    # 1. Forward speed reward around target walking speed
+    # ---------------------------------------------------------
+    forward_vel = float(data.qvel[0])
+    vel_err = forward_vel - v_des
+    speed_reward = float(np.exp(-vel_alpha * vel_err * vel_err))
 
-    hips_pos = data.body("hips").xpos
-    hips_quat = data.body("hips").xquat
-
-    hip_z = float(hips_pos[2])
-    pitch = _quat_to_pitch(hips_quat)
-
-    # Rough nominal standing hip height from XML
-    h_des = 0.17
-
-    # ------------------------------------------------------------------
-    # 2) Upright & height reward (both 0..1)
-    # ------------------------------------------------------------------
-    upright_clip = 0.7     # rad ≈ 40°
-    height_clip = 0.07     # ±7 cm
-
-    upright_raw = 1.0 - abs(pitch) / upright_clip
-    upright_reward = _clamp01(upright_raw)
-
-    height_raw = 1.0 - abs(hip_z - h_des) / height_clip
-    height_reward = _clamp01(height_raw)
-
-    # ------------------------------------------------------------------
-    # 3) Velocity reward (0..1), gated by uprightness
-    # ------------------------------------------------------------------
-    if v_des > 1e-6:
-        vel_raw = 1.0 - abs(forward_vel - v_des) / v_des
-    else:
-        vel_raw = 0.0
-    vel_raw = _clamp01(vel_raw)
-
-    # Allow more torso lean for gait initiation
-    if upright_reward < 0.3:
-        vel_raw = 0.0
-
-    vel_reward = vel_raw
-
-    # ------------------------------------------------------------------
-    # 4) Healthy (alive) bonus
-    # ------------------------------------------------------------------
-    healthy_bonus = 0.0
-    if upright_reward > 0.4 and 0.13 < hip_z < 0.23:
-        healthy_bonus = 0.1
-
-    # ------------------------------------------------------------------
-    # 5) Control cost
-    # ------------------------------------------------------------------
+    # ---------------------------------------------------------
+    # 2. Small control cost
+    # ---------------------------------------------------------
     ctrl_cost = ctrl_cost_weight * float(np.sum(np.square(action)))
 
-    # ------------------------------------------------------------------
-    # 6) Torso linear acceleration penalty (prevents rope-pull hack)
-    # ------------------------------------------------------------------
-    hip_id = model.body("hips").id
-    # data.cacc[i][0:3] = angular acc, [3:6] = linear acc in world frame
-    hip_lin_acc = np.array(data.cacc[hip_id, 3:6], dtype=float)
-    acc_cost = acc_cost_weight * float(np.linalg.norm(hip_lin_acc))
+    # ---------------------------------------------------------
+    # 3. Upright posture penalty (penalizes torso pitch)
+    # ---------------------------------------------------------
+    hips_quat = data.body("hips").xquat
+    _, pitch, _ = _quat_to_euler(hips_quat)
+    upright_cost = upright_weight * float(pitch * pitch)
 
-    # ------------------------------------------------------------------
-    # 7) Fall penalty
-    # ------------------------------------------------------------------
-    fall_term = 0.0
-    if hip_z < 0.11 or abs(pitch) > 1.0:
-        fall_term = float(fall_penalty)
+    # ---------------------------------------------------------
+    # 4. Bounce penalty (vertical velocity)
+    #     Reduces hopping → produces smooth walking gait
+    # ---------------------------------------------------------
+    vz = float(data.qvel[2])          # vertical hip velocity
+    bounce_cost = bounce_weight * vz * vz
 
-    # ------------------------------------------------------------------
-    # 8) Extra forward drift bonus (helps agent discover locomotion)
-    # ------------------------------------------------------------------
-    forward_bonus = 0.1 * max(forward_vel, 0.0)
+    # ---------------------------------------------------------
+    # 5. Alive bonus / fall penalty
+    # ---------------------------------------------------------
+    height = float(data.body("hips").xpos[2])
+    if height < fall_height_threshold:
+        alive = -10.0
+    else:
+        alive = alive_bonus
 
-    # ------------------------------------------------------------------
-    # 9) Combine final reward
-    # ------------------------------------------------------------------
-    w_vel = 3.0
-    w_upright = 0.5
-    w_height = 0.5
-
+    # ---------------------------------------------------------
+    # 6. Final reward
+    # ---------------------------------------------------------
     total = (
-        w_vel * vel_reward +
-        w_upright * upright_reward +
-        w_height * height_reward +
-        healthy_bonus -
-        ctrl_cost -
-        acc_cost +
-        fall_term +
-        forward_bonus
+        speed_reward
+        + alive
+        - ctrl_cost
+        - upright_cost
+        - bounce_cost
     )
 
-    # ------------------------------------------------------------------
-    # 10) Components dictionary (all primitive floats)
-    # ------------------------------------------------------------------
     components = {
         "forward_vel": forward_vel,
-        "vel_reward": vel_reward,
-        "upright_reward": upright_reward,
-        "height_reward": height_reward,
-        "forward_bonus": forward_bonus,
-        "healthy_bonus": healthy_bonus,
+        "vel_err": vel_err,
+        "speed_reward": speed_reward,
         "ctrl_cost": ctrl_cost,
-        "acc_cost": acc_cost,
-        "fall_term": fall_term,
         "pitch": pitch,
-        "hip_z": hip_z,
+        "upright_cost": upright_cost,
+        "vz": vz,
+        "bounce_cost": bounce_cost,
+        "alive_bonus": alive,
+        "height": height,
     }
 
     return float(total), components
