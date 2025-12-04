@@ -1,120 +1,80 @@
-# tasks/biped/reward.py
-from __future__ import annotations
-import mujoco
 import numpy as np
 
-
-def _quat_to_euler(quat: np.ndarray) -> tuple[float, float, float]:
+def reward(model, data, t, dt, action):
     """
-    Convert quaternion (w, x, y, z) to Euler angles (roll, pitch, yaw).
-    Returns Python floats.
-    """
-    w, x, y, z = [float(q) for q in quat]
-
-    # Roll (x-axis)
-    sinr_cosp = 2.0 * (w * x + y * z)
-    cosr_cosp = 1.0 - 2.0 * (x * x + y * y)
-    roll = np.arctan2(sinr_cosp, cosr_cosp)
-
-    # Pitch (y-axis)
-    sinp = 2.0 * (w * y - z * x)
-    sinp = float(np.clip(sinp, -1.0, 1.0))
-    pitch = np.arcsin(sinp)
-
-    # Yaw (z-axis)
-    siny_cosp = 2.0 * (w * z + x * y)
-    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
-    yaw = np.arctan2(siny_cosp, cosy_cosp)
-
-    return float(roll), float(pitch), float(yaw)
-
-
-def reward(
-    model: mujoco.MjModel,
-    data: mujoco.MjData,
-    t: float,
-    dt: float,
-    action: np.ndarray,
-
-    # ---- walking speed target ----
-    v_des: float = 0.35,
-    vel_alpha: float = 3.0,
-
-    # ---- penalties & bonuses ----
-    upright_weight: float = 2.0,
-    bounce_weight: float = 0.5,
-    ctrl_cost_weight: float = 0.001,
-    alive_bonus: float = 0.5,
-    fall_height_threshold: float = 0.10,
-) -> tuple[float, dict]:
-    """
-    Simple reward that produces stable walking:
-
-        R = speed_reward + alive - ctrl_cost - upright_cost - bounce_cost
-
-    - speed_reward encourages walking at target v_des (no running)
-    - upright_cost keeps torso vertical
-    - bounce_cost reduces vertical hopping (prevents pogo-running)
-    - ctrl_cost keeps movements moderate
+    Reward for stable, symmetric biped walking.
+    Works with your model's free-floating root joint ('<unnamed_0>')
+    and torso body named 'biped'.
     """
 
-    # ---------------------------------------------------------
-    # 1. Forward speed reward around target walking speed
-    # ---------------------------------------------------------
-    forward_vel = float(data.qvel[0])
-    vel_err = forward_vel - v_des
-    speed_reward = float(np.exp(-vel_alpha * vel_err * vel_err))
+    # -----------------------------------------
+    # 1. Forward velocity reward (slow walking)
+    # -----------------------------------------
+    # Free root joint: data.qvel[0] = forward velocity
+    forward_speed = data.qvel[0]
+    target_speed = 0.8         # slower walking target
+    speed_error = forward_speed - target_speed
+    speed_reward = np.exp(-0.5 * (speed_error ** 2)) * 1.0
 
-    # ---------------------------------------------------------
-    # 2. Small control cost
-    # ---------------------------------------------------------
-    ctrl_cost = ctrl_cost_weight * float(np.sum(np.square(action)))
+    # -----------------------------------------
+    # 2. Upright reward using torso (body 'biped')
+    # -----------------------------------------
+    torso_id = model.body("biped").id
+    torso_mat = data.xmat[torso_id].reshape(3, 3)
 
-    # ---------------------------------------------------------
-    # 3. Upright posture penalty (penalizes torso pitch)
-    # ---------------------------------------------------------
-    hips_quat = data.body("hips").xquat
-    _, pitch, _ = _quat_to_euler(hips_quat)
-    upright_cost = upright_weight * float(pitch * pitch)
+    # World z-axis alignment (how vertical the torso is)
+    torso_up = torso_mat[2, 2]
+    upright_reward = 0.5 * torso_up
 
-    # ---------------------------------------------------------
-    # 4. Bounce penalty (vertical velocity)
-    #     Reduces hopping → produces smooth walking gait
-    # ---------------------------------------------------------
-    vz = float(data.qvel[2])          # vertical hip velocity
-    bounce_cost = bounce_weight * vz * vz
+    # -----------------------------------------
+    # 3. Control effort penalty
+    # -----------------------------------------
+    ctrl_cost = 0.001 * np.sum(action ** 2)
 
-    # ---------------------------------------------------------
-    # 5. Alive bonus / fall penalty
-    # ---------------------------------------------------------
-    height = float(data.body("hips").xpos[2])
-    if height < fall_height_threshold:
-        alive = -10.0
-    else:
-        alive = alive_bonus
+    # -----------------------------------------
+    # 4. Bounce penalty to discourage hopping
+    # -----------------------------------------
+    vertical_vel = data.qvel[2]    # upward/downward velocity
+    bounce_cost = 0.05 * (vertical_vel ** 2)
 
-    # ---------------------------------------------------------
-    # 6. Final reward
-    # ---------------------------------------------------------
+    # -----------------------------------------
+    # 5. Gait symmetry reward (alternate stepping)
+    # -----------------------------------------
+    lh_vel = data.qvel[model.joint("left_hip_joint").id]
+    rh_vel = data.qvel[model.joint("right_hip_joint").id]
+
+    gait_sym = (lh_vel - rh_vel) ** 2
+    gait_sym_reward = 0.02 * gait_sym
+
+    # -----------------------------------------
+    # 6. Foot clearance reward
+    # -----------------------------------------
+    lf_z = data.xpos[model.body("left_foot").id][2]
+    rf_z = data.xpos[model.body("right_foot").id][2]
+
+    foot_height_nom = 0.03
+    foot_alpha = 200.0
+
+    lf_clear = np.exp(-foot_alpha * (lf_z - foot_height_nom) ** 2)
+    rf_clear = np.exp(-foot_alpha * (rf_z - foot_height_nom) ** 2)
+    clearance_reward = 0.01 * (lf_clear + rf_clear)
+
+    # -----------------------------------------
+    # 7. Alive bonus
+    # -----------------------------------------
+    alive = 0.2
+
+    # -----------------------------------------
+    # Total reward
+    # -----------------------------------------
     total = (
         speed_reward
+        + upright_reward
+        + gait_sym_reward
+        + clearance_reward
         + alive
         - ctrl_cost
-        - upright_cost
         - bounce_cost
     )
 
-    components = {
-        "forward_vel": forward_vel,
-        "vel_err": vel_err,
-        "speed_reward": speed_reward,
-        "ctrl_cost": ctrl_cost,
-        "pitch": pitch,
-        "upright_cost": upright_cost,
-        "vz": vz,
-        "bounce_cost": bounce_cost,
-        "alive_bonus": alive,
-        "height": height,
-    }
-
-    return float(total), components
+    return float(total)
