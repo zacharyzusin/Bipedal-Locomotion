@@ -20,13 +20,13 @@ from control.pd import PDConfig
 def make_env() -> MujocoEnv:
     cfg = MujocoEnvConfig(
         xml_path="assets/biped/biped.xml",
-        episode_length=5_000,
+        episode_length=4096,
         frame_skip=5,
         pd_cfg=PDConfig(kp=5.0, kd=1.0, torque_limit=1.0),
         reward_fn=reward,
         done_fn=done,
         reset_noise_scale=0.0,
-        render=False,  # workers don't need rendering
+        render=False,
     )
     return MujocoEnv(cfg)
 
@@ -41,10 +41,10 @@ def make_ppo(actor_critic):
         lam=0.98,
         clip_ratio=0.2,
         lr=3e-4,
-        train_iters=40,
+        train_iters=10,
         batch_size=512,   # larger batch since we're combining workers
         value_coef=0.5,
-        entropy_coef=0.00,
+        entropy_coef=0.0,
         max_grad_norm=0.5,
     )
     return PPO(actor_critic, ppo_cfg, device="cpu")
@@ -55,10 +55,10 @@ def main():
     mp.set_start_method("spawn", force=True)
 
     train_cfg = MPTrainConfig(
-        total_steps=5_000_000,
-        horizon=1024,
+        total_steps=20_000_000,
+        horizon=4096,
         num_workers=7,
-        log_interval=10,
+        log_interval=1,
         device="cpu",
         checkpoint_path="checkpoints/biped_ppo_mp.pt",
     )
