@@ -147,7 +147,9 @@ def create_app(
                 with torch.no_grad():
                     action, _ = policy.act(obs, deterministic=True)
 
-                action = action.squeeze(0).cpu().numpy()
+                if isinstance(action, torch.Tensor):
+                    action = action.squeeze(0).cpu().numpy()
+                
                 step_res = env.step(action)
                 
                 # --- handle done & reset policy too ---
