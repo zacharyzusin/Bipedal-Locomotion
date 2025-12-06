@@ -24,7 +24,7 @@ def make_env() -> MujocoEnv:
         xml_path="assets/biped/biped.xml",
         episode_length=4096,
         frame_skip=5,
-        pd_cfg=PDConfig(kp=5.0, kd=1.0, torque_limit=1.0),
+        pd_cfg=PDConfig(kp=5.0, kd=1.0, torque_limit=5.0),
         reset_noise_scale=0.01,
         render=True,
         reward_fn=reward,
@@ -43,7 +43,7 @@ def make_env() -> MujocoEnv:
 def make_policy(env: MujocoEnv):
     # ---- Gait parameters ----
     gait_params = GaitParams(
-        step_length=0.02,      # tune to be realistic for your tiny biped
+        step_length=0.05,      # tune to be realistic for your tiny biped
         step_height=0.01,      # front foot height
         cycle_duration=1.25,    # 1 second per full step R->L
     )
