@@ -32,17 +32,29 @@ def _body_forward_velocity_world(
     return forward_vel
 
 
+def _body_y_position(
+    model: mujoco.MjModel,
+    data: mujoco.MjData,
+    body_name: str,
+) -> float:
+    """
+    Get the global y-position of a body.
+    data.xpos contains [x, y, z] world positions for each body.
+    """
+    body_id = model.body(body_name).id
+    return float(data.xpos[body_id, 1])  # y-component
+
+
 def reward(
     model: mujoco.MjModel,
     data: mujoco.MjData,
     t: float,
     dt: float,
     action: np.ndarray,
-    target_v: float = 0.4,
-    sigma_v: float = 0.2,
     vel_weight: float = 1.0,
     alive_bonus: float = 0.05,
     ctrl_cost_weight: float = 0.01,
+    lateral_cost_weight: float = 0.1,  # new parameter for y-deviation penalty
 ) -> tuple[float, dict]:
     # --- forward velocity from hips + feet ---
     base_forward  = 2.0 * _body_forward_velocity_world(model, data, "hips")
@@ -55,6 +67,10 @@ def reward(
     # linear forward reward (you can revert to Gaussian shaping if you want)
     forward_reward = vel_weight * forward_vel
 
+    # --- lateral deviation cost (penalize y deviation from 0) ---
+    hip_y = _body_y_position(model, data, "hips")
+    lateral_cost = lateral_cost_weight * hip_y ** 2  # quadratic penalty
+
     # --- control cost ---
     ctrl_cost = ctrl_cost_weight * float(np.sum(np.square(data.ctrl)))
 
@@ -63,7 +79,7 @@ def reward(
     alive = z > 0.12
     alive_reward = alive_bonus if alive else 0.0
 
-    total = forward_reward + alive_reward - ctrl_cost
+    total = forward_reward + alive_reward - ctrl_cost - lateral_cost
 
     components = {
         "forward_vel": forward_vel,
@@ -73,6 +89,8 @@ def reward(
         "forward_reward": forward_reward,
         "alive_reward": alive_reward,
         "ctrl_cost": ctrl_cost,
+        "lateral_cost": lateral_cost,
+        "hip_y": hip_y,
         "is_alive": float(alive),
     }
     return float(total), components
