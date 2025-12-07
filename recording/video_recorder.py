@@ -14,14 +14,7 @@ from PIL import Image
 from core.base_env import Env
 from policies.actor_critic import ActorCritic
 
-
-@dataclass
-class CameraSettings:
-    """Camera configuration for recording."""
-    distance: float = 3.0
-    azimuth: float = 90.0
-    elevation: float = -20.0
-    lookat: tuple[float, float, float] = (0.0, 0.0, 0.5)
+from streaming.mjpeg_server import CameraSettings
 
 
 @dataclass
@@ -109,6 +102,7 @@ def record_video(
             azimuth=cam.azimuth,
             elevation=cam.elevation,
             lookat=cam.lookat,
+            track_body=cam.track_body,
         )
     
     current_episode_length = 0

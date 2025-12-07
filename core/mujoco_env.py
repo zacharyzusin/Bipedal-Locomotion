@@ -413,8 +413,17 @@ class MujocoEnv(Env):
         azimuth: float,
         elevation: float,
         lookat: tuple[float, float, float],
+        track_body: str | None = None,
     ) -> None:
-        """Update camera parameters for rendering."""
+        """Update camera parameters for rendering.
+        
+        Args:
+            distance: Distance from the target point
+            azimuth: Horizontal rotation in degrees
+            elevation: Vertical rotation in degrees  
+            lookat: Point to look at (offset from body if tracking)
+            track_body: Name of body to track (e.g., "biped", "hips")
+        """
         # Update config
         self._camera_config.distance = distance
         self._camera_config.azimuth = azimuth
@@ -426,3 +435,15 @@ class MujocoEnv(Env):
         self._mjv_camera.azimuth = azimuth
         self._mjv_camera.elevation = elevation
         self._mjv_camera.lookat[:] = lookat
+        
+        # Enable body tracking if specified
+        if track_body is not None:
+            body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, track_body)
+            if body_id >= 0:
+                self._mjv_camera.type = mujoco.mjtCamera.mjCAMERA_TRACKING
+                self._mjv_camera.trackbodyid = body_id
+            else:
+                raise ValueError(f"Body '{track_body}' not found in model")
+        else:
+            self._mjv_camera.type = mujoco.mjtCamera.mjCAMERA_FREE
+            self._mjv_camera.trackbodyid = -1
