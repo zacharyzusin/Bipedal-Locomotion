@@ -1,0 +1,6 @@
+shimmy>=2.0
+dm_control>=1.0.35
+conda install -c conda-forge glew
+conda install -c conda-forge mesalib
+conda install -c anaconda mesa-libgl-cos6-x86_64
+conda install -c menpo glfw3
