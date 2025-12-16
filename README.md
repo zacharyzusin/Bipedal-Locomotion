@@ -1,4 +1,4 @@
-# Simulate Biped
+# Bipedal Locomotion
 
 A reinforcement learning framework for training and simulating bipedal robots using MuJoCo physics simulation and Proximal Policy Optimization (PPO). This project provides a complete pipeline for training, evaluating, streaming, and recording bipedal locomotion policies.
 
