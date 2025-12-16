@@ -1,4 +1,10 @@
-# training/mp_on_policy.py
+"""Multi-process on-policy training loop.
+
+This module implements parallel training using multiple worker processes.
+Each worker collects rollouts independently, and the main process aggregates
+the data and updates the policy. This significantly speeds up data collection
+for CPU-bound environments.
+"""
 from __future__ import annotations
 from dataclasses import dataclass
 from collections import defaultdict
@@ -22,6 +28,16 @@ from sampling.rollout_worker import (
 
 @dataclass
 class MPTrainConfig:
+    """Configuration for multi-process training.
+    
+    Attributes:
+        total_steps: Total number of environment steps to collect.
+        horizon: Number of steps per worker per rollout.
+        num_workers: Number of parallel worker processes.
+        log_interval: Frequency of logging (every N iterations).
+        device: Device to run on ("cpu" or "cuda").
+        checkpoint_path: Path to save model checkpoints.
+    """
     total_steps: int = 1_000_000
     horizon: int = 1024
     num_workers: int = 8
@@ -34,6 +50,17 @@ AlgoFactory = Callable[[ActorCritic], PPO]
 
 
 class MultiProcessOnPolicyTrainer:
+    """Multi-process on-policy RL trainer.
+    
+    Uses multiple worker processes to collect rollouts in parallel,
+    significantly speeding up data collection. The main process:
+    1. Broadcasts policy parameters to workers
+    2. Collects rollouts from all workers
+    3. Aggregates data and updates policy
+    4. Repeats until total_steps reached
+    
+    Workers run in separate processes and communicate via queues.
+    """
     def __init__(
         self,
         env_factory: EnvFactory,
@@ -171,9 +198,17 @@ class MultiProcessOnPolicyTrainer:
     # Utilities
     # ----------------------------------------------------------------------
     def _combine_batches(self, batches: List[RolloutBatch]) -> Dict[str, Any]:
-        """
-        - Compute values & advantages for each worker's trajectory.
-        - Concatenate into a single big batch for PPO.
+        """Combine rollouts from multiple workers into a single batch.
+        
+        Computes advantages and returns for each worker's trajectory using
+        GAE, then concatenates all data into a single batch for PPO updates.
+        
+        Args:
+            batches: List of RolloutBatch objects from each worker.
+            
+        Returns:
+            Combined batch dictionary with same structure as single-process
+            trainer, but with data from all workers concatenated.
         """
         all_obs: Dict[str, list] = defaultdict(list)
         all_actions = []

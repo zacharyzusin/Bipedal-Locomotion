@@ -315,10 +315,6 @@ for _ in range(1000):
 - **Video recording fails**: Install FFmpeg: `sudo apt install ffmpeg`
 - **Slow training**: Use multi-process training or reduce `horizon`
 
-## License
-
-[Add your license here]
-
 ## Acknowledgments
 
 Built for robotics research and education. Uses MuJoCo physics engine and PyTorch for deep learning.

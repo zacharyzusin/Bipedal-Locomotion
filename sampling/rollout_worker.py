@@ -1,4 +1,9 @@
-# sampling/rollout_worker.py
+"""Rollout collection worker for multi-process training.
+
+This module implements worker processes that collect rollouts in parallel.
+Workers receive policy parameters via queues, run rollouts, and send results
+back to the main training process.
+"""
 from __future__ import annotations
 from dataclasses import dataclass
 from collections import defaultdict
@@ -10,16 +15,33 @@ import torch
 from core.base_env import Env
 from policies.actor_critic import ActorCritic
 
+# Type aliases for factories (must be picklable for multiprocessing)
 EnvFactory = Callable[[], Env]
 PolicyFactory = Callable[[Any], ActorCritic]
 
 
 @dataclass
 class WorkerConfig:
+    """Configuration for rollout worker.
+    
+    Attributes:
+        horizon: Number of steps to collect per rollout.
+    """
     horizon: int = 1024
+
 
 @dataclass
 class RolloutBatch:
+    """Batch of rollout data collected by a worker.
+    
+    Attributes:
+        obs: Observation dictionary with arrays of shape [T, ...].
+        actions: Actions array of shape [T, act_dim].
+        rewards: Rewards array of shape [T].
+        dones: Done flags array of shape [T].
+        log_probs: Log probabilities array of shape [T].
+        last_obs: Last observation dictionary (for bootstrapping).
+    """
     obs: Dict[str, np.ndarray]        # {key: [T, dim]}
     actions: np.ndarray               # [T, act_dim]
     rewards: np.ndarray               # [T]
@@ -36,12 +58,23 @@ def worker_loop(
     cfg: WorkerConfig,
     device: str = "cpu",
 ):
-    """
-    Blocking loop:
-    - Waits for params (state_dict) from params_queue
-    - Runs rollout of length cfg.horizon
-    - Puts RolloutBatch into rollout_queue
-    - Repeats
+    """Main loop for rollout worker process.
+    
+    This function runs in a separate process and continuously:
+    1. Waits for policy parameters from params_queue
+    2. Loads parameters into local policy
+    3. Collects a rollout of length cfg.horizon
+    4. Sends RolloutBatch to rollout_queue
+    5. Repeats until receiving "STOP" message
+    
+    Args:
+        worker_id: Unique identifier for this worker.
+        env_factory: Function to create environment (must be picklable).
+        policy_factory: Function to create policy (must be picklable).
+        params_queue: Queue to receive policy parameters (state_dict).
+        rollout_queue: Queue to send RolloutBatch results.
+        cfg: Worker configuration.
+        device: Device to run policy on.
     """
 
     # Important: factories must be top-level functions (picklable)
@@ -69,6 +102,17 @@ def _collect_rollout(
     horizon: int,
     device: str,
 ) -> RolloutBatch:
+    """Collect a single rollout from the environment.
+    
+    Args:
+        env: Environment to collect from.
+        policy: Policy to use for action selection.
+        horizon: Number of steps to collect.
+        device: Device policy is on.
+        
+    Returns:
+        RolloutBatch containing all collected data.
+    """
     obs_buf: Dict[str, list] = defaultdict(list)
     act_buf, logp_buf, rew_buf, done_buf = [], [], [], []
 

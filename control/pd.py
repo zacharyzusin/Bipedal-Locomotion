@@ -1,26 +1,46 @@
-# control/pd.py
+"""Proportional-Derivative (PD) controller for joint-level control.
+
+This module implements a PD controller that converts desired joint positions
+to torques. The controller can be configured with per-joint or global gains
+and optional torque limits.
+"""
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
 
+
 @dataclass
 class PDConfig:
-    """
-    Generic PD controller config for one or more joints.
-
-    kp, kd, torque_limit can be:
-      - scalars, applied to all joints
-      - or 1D arrays of shape (n_joints,)
+    """Configuration for PD controller.
+    
+    The controller computes: τ = kp * (q_des - q) + kd * (qd_des - qd)
+    
+    Attributes:
+        kp: Proportional gain. Can be scalar (applied to all joints) or
+            array of shape (n_joints,) for per-joint gains.
+        kd: Derivative gain. Same format as kp.
+        torque_limit: Optional maximum torque magnitude. If None, no limit.
+            Can be scalar or per-joint array.
     """
     kp: float | np.ndarray
     kd: float | np.ndarray
-    torque_limit: Optional[float | np.ndarray] = None  # None = no limit
+    torque_limit: Optional[float | np.ndarray] = None
 
 
 class PDController:
+    """Proportional-Derivative controller for joint control.
+    
+    Computes control torques based on position and velocity errors.
+    Supports per-joint or global gains and optional torque saturation.
+    """
     def __init__(self, cfg: PDConfig):
+        """Initialize PD controller.
+        
+        Args:
+            cfg: PD controller configuration.
+        """
         self.kp = np.array(cfg.kp, dtype=np.float32) if not np.isscalar(cfg.kp) else cfg.kp
         self.kd = np.array(cfg.kd, dtype=np.float32) if not np.isscalar(cfg.kd) else cfg.kd
         if cfg.torque_limit is None:
@@ -39,10 +59,23 @@ class PDController:
         q_des: np.ndarray,
         qd_des: Optional[np.ndarray] = None,
     ) -> np.ndarray:
-        """
-        Compute torques for a *set of joints*.
-
-        All inputs must have the same shape (n_joints,).
+        """Compute control torques.
+        
+        Computes: τ = kp * (q_des - q) + kd * (qd_des - qd)
+        with optional torque limiting.
+        
+        Args:
+            q: Current joint positions, shape (n_joints,).
+            qd: Current joint velocities, shape (n_joints,).
+            q_des: Desired joint positions, shape (n_joints,).
+            qd_des: Optional desired joint velocities, shape (n_joints,).
+                Defaults to zero if None.
+                
+        Returns:
+            Control torques, shape (n_joints,).
+            
+        Raises:
+            AssertionError: If input shapes don't match.
         """
         q = np.asarray(q, dtype=np.float32)
         qd = np.asarray(qd, dtype=np.float32)

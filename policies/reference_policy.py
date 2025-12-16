@@ -1,4 +1,12 @@
-# policies/reference_policy.py
+"""Hand-crafted reference policy for bipedal locomotion.
+
+This module implements a baseline controller using a hand-designed gait
+pattern, inverse kinematics, and PD control. The policy generates periodic
+foot trajectories and uses IK to convert them to joint angles, which are
+then tracked using PD control.
+
+This serves as a baseline for comparison with learned RL policies.
+"""
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict
@@ -10,26 +18,48 @@ import torch.nn as nn
 from control.ik_2r import Planar2RLegConfig, Planar2RLegIK
 from control.pd import PDConfig, PDController
 
+
 @dataclass
 class GaitParams:
-    step_length: float       # max |dx| around neutral [m]
-    step_height: float       # max upward dz [m]
-    cycle_duration: float    # seconds per full L->R->L cycle
+    """Parameters for periodic gait pattern.
+    
+    Attributes:
+        step_length: Maximum horizontal foot displacement from neutral [m].
+        step_height: Maximum vertical foot lift during swing [m].
+        cycle_duration: Duration of one full gait cycle (L->R->L) [s].
+    """
+    step_length: float
+    step_height: float
+    cycle_duration: float
+
 
 @dataclass
 class FootDelta:
-    delta: np.ndarray   # (dx, dz)
+    """Foot target relative to neutral position.
+    
+    Attributes:
+        delta: 2D displacement (dx, dz) relative to foot base position.
+        foot_angle: Desired foot pitch angle [rad].
+    """
+    delta: np.ndarray
     foot_angle: float
 
 def gait_targets(t: float, params: GaitParams) -> Dict[str, FootDelta]:
-    """
-    Symmetric 2-phase gait:
-      - Phase 0.0–0.5:  LEFT swings, RIGHT stance.
-      - Phase 0.5–1.0:  RIGHT swings, LEFT stance.
-      - dz is always >= 0 (we only LIFT).
-      - Starts with LEFT swinging.
-
-    delta is relative to the foot's neutral/base position.
+    """Generate foot targets for symmetric 2-phase gait.
+    
+    Implements a periodic gait where legs alternate between swing and stance:
+    - Phase 0.0-0.5: LEFT leg swings, RIGHT leg in stance
+    - Phase 0.5-1.0: RIGHT leg swings, LEFT leg in stance
+    
+    The swing leg follows a sinusoidal trajectory for smooth motion.
+    
+    Args:
+        t: Current time [s].
+        params: Gait parameters.
+        
+    Returns:
+        Dictionary with "left" and "right" FootDelta objects.
+        Delta is relative to each foot's neutral/base position.
     """
     # Time → phase in [0, 1)
     phase = (t / params.cycle_duration) % 1.0
@@ -74,27 +104,50 @@ def gait_targets(t: float, params: GaitParams) -> Dict[str, FootDelta]:
 
 @dataclass
 class LegJointIndices:
-    """
-    Indices of the leg joints in the full q/qdot/ctrl/action vectors.
-    These are robot-specific and MUST be adapted to your biped.xml.
+    """Joint indices for a single leg.
+    
+    These indices map to positions in the full joint/action vectors.
+    Must be adapted to match the specific robot model's joint ordering.
+    
+    Attributes:
+        hip: Index of hip joint.
+        knee: Index of knee joint.
+        ankle: Index of ankle joint.
     """
     hip: int
     knee: int
     ankle: int
 
+
 @dataclass
 class WalkerJointMap:
+    """Mapping of joint indices for both legs.
+    
+    Attributes:
+        left: Joint indices for left leg.
+        right: Joint indices for right leg.
+    """
     left: LegJointIndices
     right: LegJointIndices
 
 class ReferenceWalkerPolicy(nn.Module):
-    """
-    Hand-crafted baseline controller:
-
-      gait (foot targets) -> 2R leg IK -> desired joint angles -> PD -> torques.
-
-    The interface matches ActorCritic.act: it returns (action_tensor, logp_tensor),
-    but logp is just zeros since this is not stochastic.
+    """Hand-crafted baseline controller for bipedal walking.
+    
+    This policy implements a deterministic control pipeline:
+    1. Generate periodic gait pattern (foot targets)
+    2. Solve inverse kinematics to get desired joint angles
+    3. Use PD control to track joint angles (output torques)
+    
+    The interface matches ActorCritic.act() for compatibility, but
+    returns zero log probabilities since this is deterministic.
+    
+    Attributes:
+        env: Environment instance (for accessing dt, foot positions, etc.).
+        gait_params: Gait pattern parameters.
+        ik_left: Inverse kinematics solver for left leg.
+        ik_right: Inverse kinematics solver for right leg.
+        pd: PD controller for joint tracking.
+        _time: Internal time counter for gait phase.
     """
     def __init__(
         self,

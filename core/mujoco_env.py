@@ -1,4 +1,9 @@
-# core/mujoco_env.py
+"""MuJoCo physics environment wrapper for reinforcement learning.
+
+This module provides a MuJoCo-based environment implementation that supports
+both 2D and 3D robot models, optional PD control, custom reward/done functions,
+and rendering capabilities for visualization and evaluation.
+"""
 from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -11,23 +16,51 @@ from .base_env import Env, StepResult
 from .specs import EnvSpec, SpaceSpec
 from control.pd import PDConfig, PDController
 
+# Type aliases for reward and done functions
 RewardReturn = Union[
     float,
-    tuple[float, Mapping[str, float]],
+    tuple[float, Mapping[str, float]],  # (reward, components_dict)
 ]
 RewardFn = Callable[..., RewardReturn]
-
 DoneFn = Callable[[mujoco.MjModel, mujoco.MjData, int], bool]
+
 
 @dataclass
 class CameraConfig:
+    """Camera configuration for rendering.
+    
+    Attributes:
+        distance: Distance from the look-at point in meters.
+        azimuth: Horizontal rotation angle in degrees (0-360).
+        elevation: Vertical rotation angle in degrees (-90 to 90).
+        lookat: 3D point to look at (x, y, z) in world coordinates.
+    """
     distance: float = 3.0
     azimuth: float = 90.0
     elevation: float = -20.0
     lookat: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 0.5]))
 
+
 @dataclass
 class MujocoEnvConfig:
+    """Configuration for MuJoCo environment.
+    
+    Attributes:
+        xml_path: Path to MuJoCo XML model file.
+        episode_length: Maximum number of steps per episode.
+        frame_skip: Number of simulation steps per action (action repeat).
+        pd_cfg: Optional PD controller configuration for low-level joint control.
+        reward_fn: Custom reward function (model, data, t, dt, action) -> reward.
+        done_fn: Custom termination function (model, data, t) -> bool.
+        reset_noise_scale: Scale of uniform noise added to initial state (0 = no noise).
+        render: Whether to enable rendering (required for visualization).
+        width: Render width in pixels (if render=True).
+        height: Render height in pixels (if render=True).
+        camera_id: Optional camera ID or name to use (None = custom camera).
+        base_site: Optional site name for base/hip body (for IK controllers).
+        left_foot_site: Optional site name for left foot (for IK controllers).
+        right_foot_site: Optional site name for right foot (for IK controllers).
+    """
     xml_path: str | Path
     episode_length: int = 1000
     frame_skip: int = 1
@@ -48,7 +81,41 @@ class MujocoEnvConfig:
     right_foot_site: Optional[str] = None
 
 class MujocoEnv(Env):
+    """MuJoCo-based reinforcement learning environment.
+    
+    This environment wraps MuJoCo physics simulation and provides a standard
+    RL interface. It automatically handles:
+    - 2D vs 3D model detection (based on root joint type)
+    - Observation space construction (base pose/velocity + joint states)
+    - Optional PD control for joint-level actuation
+    - Custom reward and termination functions
+    - Rendering for visualization
+    
+    The observation space includes:
+    - Base orientation (Euler angles for 3D, angle for 2D)
+    - Base linear velocity
+    - Actuated joint positions (excluding root DOFs)
+    - Actuated joint velocities (excluding root DOFs)
+    
+    Attributes:
+        model: MuJoCo model object.
+        data: MuJoCo data object (contains current state).
+        dt: Effective timestep (model timestep * frame_skip).
+        hip_height: Height of base/hip body (if sites configured).
+        foot_base_pos: Dictionary with "left" and "right" foot base positions
+            relative to hip (if sites configured).
+        spec: Environment specification (observation and action spaces).
+    """
     def __init__(self, cfg: MujocoEnvConfig):
+        """Initialize MuJoCo environment.
+        
+        Args:
+            cfg: Environment configuration.
+            
+        Raises:
+            FileNotFoundError: If XML model file doesn't exist.
+            ValueError: If model is invalid or sites are misconfigured.
+        """
         self.cfg = cfg
         xml_path = str(cfg.xml_path)
 
@@ -168,7 +235,13 @@ class MujocoEnv(Env):
     # Core helpers
     # -------------------------------------------------------------------------
     def _record_obs(self) -> None:
-        """Record actuated joint positions and velocities."""
+        """Record actuated joint positions and velocities.
+        
+        Note: This method is currently unused but kept for potential future
+        data logging functionality.
+        """
+        if not hasattr(self, "_recorded"):
+            self._recorded = {"time": [], "qpos": [], "qvel": []}
         self._recorded["time"].append(self._t * self.dt)
         # Record only actuated joint positions (skip root DOFs)
         self._recorded["qpos"].append(self.data.qpos[self._qpos_offset:].copy())
@@ -176,7 +249,17 @@ class MujocoEnv(Env):
         self._recorded["qvel"].append(self.data.qvel[self._qvel_offset:].copy())
 
     def _quat_to_euler(self, quat: np.ndarray) -> np.ndarray:
-        """Convert quaternion (w, x, y, z) to Euler angles (roll, pitch, yaw)."""
+        """Convert quaternion to Euler angles using ZYX convention.
+        
+        Converts a quaternion in (w, x, y, z) format to Euler angles
+        (roll, pitch, yaw) using the standard aerospace convention.
+        
+        Args:
+            quat: Quaternion array [w, x, y, z].
+            
+        Returns:
+            Euler angles [roll, pitch, yaw] in radians.
+        """
         w, x, y, z = quat
         
         # Roll (x-axis rotation)
@@ -197,6 +280,17 @@ class MujocoEnv(Env):
         return np.array([roll, pitch, yaw], dtype=np.float32)
 
     def _get_obs(self) -> np.ndarray:
+        """Construct observation dictionary from current state.
+        
+        The observation includes:
+        - Base orientation (Euler angles for 3D, angle for 2D)
+        - Base linear velocity
+        - Actuated joint positions (excluding root DOFs)
+        - Actuated joint velocities (excluding root DOFs)
+        
+        Returns:
+            Dictionary with keys: "euler", "lin_vel", "joint_pos", "joint_vel".
+        """
         if self._is_2d:
             # 2D model (e.g., Walker2D): root is (x, z, angle)
             # Extract angle and convert to "euler-like" format
@@ -228,6 +322,15 @@ class MujocoEnv(Env):
         return obs
 
     def _set_state(self, qpos: np.ndarray, qvel: np.ndarray) -> None:
+        """Set the simulation state directly.
+        
+        Args:
+            qpos: Joint positions array of shape (nq,).
+            qvel: Joint velocities array of shape (nv,).
+            
+        Raises:
+            AssertionError: If array shapes don't match model dimensions.
+        """
         assert qpos.shape == (self.model.nq,)
         assert qvel.shape == (self.model.nv,)
         self.data.qpos[:] = qpos
@@ -235,10 +338,22 @@ class MujocoEnv(Env):
         mujoco.mj_forward(self.model, self.data)
 
     def _apply_action(self, action: np.ndarray) -> np.ndarray:
+        """Apply action to the environment.
+        
+        If PD control is configured, converts desired joint positions to
+        torques. Otherwise, applies actions directly as torques.
+        
+        Args:
+            action: Action array (desired joint positions if PD enabled,
+                otherwise torques).
+                
+        Returns:
+            Applied action (torques) that were actually set.
+        """
         # Ensure correct shape + dtype
         action = np.asarray(action, dtype=np.float32).reshape(self.spec.act.shape)
+        
         # Apply PD control if configured
-
         if self.cfg.pd_cfg is not None:
             # Get current joint positions and velocities (skip root DOFs)
             q = self.data.qpos[self._qpos_offset:]
@@ -258,6 +373,12 @@ class MujocoEnv(Env):
         return action
 
     def _render_frame(self) -> Optional[np.ndarray]:
+        """Render current frame as RGB image.
+        
+        Returns:
+            RGB frame array of shape (height, width, 3) with dtype uint8,
+            or None if rendering is disabled.
+        """
         if self._renderer is None:
             return None
 
@@ -286,56 +407,111 @@ class MujocoEnv(Env):
         dt: float = 0.0,
         action: Optional[np.ndarray] = None,
     ) -> float:
-        # Override this per-task.
+        """Default reward function (returns zero).
+        
+        This should be overridden with a task-specific reward function
+        via the config or set_reward_fn().
+        
+        Args:
+            model: MuJoCo model.
+            data: MuJoCo data (current state).
+            t: Current time step.
+            dt: Time step duration.
+            action: Applied action.
+            
+        Returns:
+            Reward value (default: 0.0).
+        """
         return 0.0
 
     def _default_done_fn(
         self, model: mujoco.MjModel, data: mujoco.MjData, t: int
     ) -> bool:
-        # Time-limit termination
+        """Default termination function (time limit only).
+        
+        Args:
+            model: MuJoCo model.
+            data: MuJoCo data (current state).
+            t: Current time step.
+            
+        Returns:
+            True if episode should terminate (time limit reached).
+        """
         return t >= self.cfg.episode_length
 
     # -------------------------------------------------------------------------
     # Env interface
     # -------------------------------------------------------------------------
     def reset(self, seed: int | None = None) -> np.ndarray:
+        """Reset environment to initial state.
+        
+        Resets the simulation to the default initial state (from XML),
+        optionally adds noise for domain randomization, and returns the
+        initial observation.
+        
+        Args:
+            seed: Optional random seed for reproducible resets.
+            
+        Returns:
+            Initial observation dictionary.
+        """
         if seed is not None:
             self._rng = np.random.default_rng(seed)
 
         self._t = 0
 
-        # Fully reset MuJoCo internal state
+        # Fully reset MuJoCo internal state to defaults from XML
         mujoco.mj_resetData(self.model, self.data)
 
         qpos = self._init_qpos.copy()
         qvel = self._init_qvel.copy()
 
+        # Add noise for domain randomization if configured
         s = self.cfg.reset_noise_scale
         if s > 0.0:
-            # noise in [-s, s] for each element
+            # Uniform noise in [-s, s] for each element
             qpos += self._rng.uniform(-s, s, size=qpos.shape)
             qvel += self._rng.uniform(-s, s, size=qvel.shape)
         
         self.data.qpos[:] = qpos
         self.data.qvel[:] = qvel
         
-        # clear controls
+        # Clear controls (zero torques)
         if self.model.nu > 0:
             self.data.ctrl[:] = 0.0
 
+        # Forward kinematics to update all dependent quantities
         mujoco.mj_forward(self.model, self.data)
 
         return self._get_obs()
 
     def step(self, action: np.ndarray) -> StepResult:
+        """Execute one environment step.
+        
+        Applies the action, advances the simulation by frame_skip steps,
+        computes reward and done status, and returns the result.
+        
+        Args:
+            action: Action array (shape must match action space).
+            
+        Returns:
+            StepResult containing:
+            - obs: New observation dictionary
+            - reward: Scalar reward
+            - done: Termination flag
+            - info: Additional info (time, applied action, reward components)
+            - frame: Optional RGB frame if rendering enabled
+        """
         applied_action = self._apply_action(action)
 
+        # Advance simulation by frame_skip steps
         for _ in range(self.cfg.frame_skip):
             mujoco.mj_step(self.model, self.data)
             self._t += 1
 
         obs = self._get_obs()
         
+        # Compute reward (may return tuple with components)
         reward_raw = self._reward_fn(self.model, self.data, self._t, self.dt, applied_action)
         if isinstance(reward_raw, tuple):
             reward, reward_components = reward_raw
@@ -343,6 +519,7 @@ class MujocoEnv(Env):
             reward = float(reward_raw)
             reward_components = {}
 
+        # Check termination condition
         done = self._done_fn(self.model, self.data, self._t)
 
         info: Dict[str, Any] = {
@@ -354,6 +531,7 @@ class MujocoEnv(Env):
         if done:
             info["episode_length"] = self._t
 
+        # Render frame if enabled
         frame = self._render_frame()
 
         return StepResult(
@@ -365,14 +543,22 @@ class MujocoEnv(Env):
         )
 
     def set_reward_fn(self, reward_fn: RewardFn) -> None:
-        """
-        Replace the current reward function at runtime.
-        Useful when the reward needs access to the fully
-        constructed env (e.g., reference motion, hip height).
+        """Replace the current reward function at runtime.
+        
+        Useful when the reward function needs access to the fully
+        constructed environment (e.g., reference motion, hip height).
+        
+        Args:
+            reward_fn: New reward function with signature
+                (model, data, t, dt, action) -> reward or (reward, components).
         """
         self._reward_fn = reward_fn
 
     def close(self) -> None:
+        """Clean up environment resources.
+        
+        Releases the renderer and any other allocated resources.
+        """
         # Renderer holds GL resources; cleanly drop reference
         self._renderer = None
 
@@ -414,5 +600,6 @@ class MujocoEnv(Env):
             else:
                 raise ValueError(f"Body '{track_body}' not found in model")
         else:
+            # Free camera mode (not tracking any body)
             self._mjv_camera.type = mujoco.mjtCamera.mjCAMERA_FREE
             self._mjv_camera.trackbodyid = -1

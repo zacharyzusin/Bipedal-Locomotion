@@ -1,3 +1,9 @@
+"""Single-process on-policy training loop.
+
+This module implements a training loop for on-policy RL algorithms (e.g., PPO)
+using a single environment. It alternates between collecting rollouts and
+updating the policy.
+"""
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Dict, Any, Optional
@@ -10,8 +16,18 @@ from core.base_env import Env
 from algorithms.ppo import PPO, PPOConfig, compute_gae
 from policies.actor_critic import ActorCritic
 
+
 @dataclass
 class TrainConfig:
+    """Configuration for training loop.
+    
+    Attributes:
+        total_steps: Total number of environment steps to collect.
+        horizon: Number of steps to collect per rollout.
+        log_interval: Frequency of logging (every N iterations).
+        device: Device to run on ("cpu" or "cuda").
+        checkpoint_path: Path to save model checkpoints.
+    """
     total_steps: int = 200_000
     horizon: int = 2048
     log_interval: int = 10
@@ -25,8 +41,15 @@ AlgoFactory = Callable[[ActorCritic], PPO]
 
 
 class OnPolicyTrainer:
-    """
-    Generic single-env on-policy trainer.
+    """Single-environment on-policy RL trainer.
+    
+    Implements the standard on-policy training loop:
+    1. Collect rollouts using current policy
+    2. Compute advantages using GAE
+    3. Update policy using collected data
+    4. Repeat until total_steps reached
+    
+    Supports any on-policy algorithm (PPO, A2C, etc.) via the algo_factory.
     """
     def __init__(
         self,
@@ -53,6 +76,20 @@ class OnPolicyTrainer:
     # Rollout collection
     # ---------------------------------------------------------
     def _collect_trajectory(self) -> Dict[str, np.ndarray]:
+        """Collect a single trajectory using the current policy.
+        
+        Runs the policy in the environment for 'horizon' steps, collecting
+        observations, actions, rewards, and values. Computes advantages
+        and returns using GAE-Lambda.
+        
+        Returns:
+            Dictionary containing:
+            - 'obs': Observations array [T, obs_dim]
+            - 'actions': Actions array [T, act_dim]
+            - 'log_probs': Log probabilities [T]
+            - 'advantages': GAE advantages [T]
+            - 'returns': Monte Carlo returns [T]
+        """
         horizon = self.train_cfg.horizon
         env = self.env
         ac = self.policy
@@ -113,6 +150,11 @@ class OnPolicyTrainer:
     # Training loop WITH TIMING
     # ---------------------------------------------------------
     def run(self) -> None:
+        """Run the training loop.
+        
+        Collects rollouts and updates the policy until total_steps is reached.
+        Logs progress periodically and saves final checkpoint.
+        """
         total_steps = 0
         iteration = 0
         start_time = time.time()

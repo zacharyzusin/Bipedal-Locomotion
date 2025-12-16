@@ -1,4 +1,9 @@
-# recording/video_recorder.py
+"""Video recording utilities for policy evaluation.
+
+This module provides functionality to record high-quality videos of
+trained policies running in the environment. Uses FFmpeg for encoding
+and supports configurable camera settings and video quality.
+"""
 from __future__ import annotations
 import subprocess
 from dataclasses import dataclass, field
@@ -19,7 +24,17 @@ from streaming.mjpeg_server import CameraSettings
 
 @dataclass
 class RecordingConfig:
-    """Configuration for video recording."""
+    """Configuration for video recording.
+    
+    Attributes:
+        output_path: Path to save video file.
+        num_steps: Number of simulation steps to record.
+        camera: Camera settings for rendering.
+        codec: Video codec (default: libx264).
+        pixel_format: Pixel format (default: yuv420p for compatibility).
+        crf: Constant rate factor for quality (18-23 is good, lower = better).
+        fps_override: Optional FPS override (default uses simulation timestep).
+    """
     output_path: str | Path
     num_steps: int = 1000
     camera: CameraSettings = field(default_factory=CameraSettings)
@@ -187,16 +202,22 @@ def _encode_video_ffmpeg(
     pixel_format: str = "yuv420p",
     crf: int = 18,
 ) -> None:
-    """
-    Encode frames to video using FFmpeg via pipe.
+    """Encode frames to video using FFmpeg via pipe.
+    
+    Reads raw RGB frames from memory and encodes them to video file.
+    Requires FFmpeg to be installed on the system.
     
     Args:
-        frames: List of RGB uint8 frames (H, W, 3)
-        output_path: Path to save video
-        fps: Frames per second
-        codec: Video codec (default: libx264)
-        pixel_format: Pixel format (default: yuv420p for compatibility)
-        crf: Constant rate factor for quality (lower = better)
+        frames: List of RGB uint8 frames, each shape (H, W, 3).
+        output_path: Path to save video file.
+        fps: Frames per second.
+        codec: Video codec (default: libx264).
+        pixel_format: Pixel format (default: yuv420p for compatibility).
+        crf: Constant rate factor for quality (lower = better, 18-23 is good).
+        
+    Raises:
+        RuntimeError: If FFmpeg encoding fails.
+        ValueError: If frames list is empty.
     """
     if len(frames) == 0:
         raise ValueError("No frames to encode")

@@ -1,8 +1,13 @@
-# streaming/mjpeg_server.py
+"""MJPEG streaming server for real-time policy visualization.
+
+This module provides a FastAPI-based web server that streams simulation
+frames as MJPEG video and exposes APIs for camera control and statistics.
+Enables real-time visualization of trained policies in a web browser.
+"""
 from __future__ import annotations
 import asyncio
 from io import BytesIO
-from typing import AsyncIterator, Callable, Any, Deque, Mapping
+from typing import AsyncIterator, Callable, Any, Deque, Mapping, Dict
 
 from collections import deque
 from dataclasses import dataclass, asdict
@@ -19,8 +24,17 @@ from PIL import Image
 from core.base_env import Env
 from policies.actor_critic import ActorCritic
 
+
 @dataclass
 class StepStats:
+    """Statistics for a single simulation step.
+    
+    Attributes:
+        t: Time step.
+        reward: Reward received.
+        reward_components: Dictionary of reward component breakdown.
+        done: Whether episode terminated.
+    """
     t: int
     reward: float
     reward_components: Mapping[str, float]
@@ -28,13 +42,24 @@ class StepStats:
 
 @dataclass
 class CameraSettings:
+    """Camera configuration for rendering.
+    
+    Attributes:
+        distance: Distance from look-at point.
+        azimuth: Horizontal rotation in degrees.
+        elevation: Vertical rotation in degrees.
+        lookat: 3D point to look at (x, y, z).
+        track_body: Optional body name to track.
+    """
     distance: float = 3.0
     azimuth: float = 90.0
     elevation: float = -20.0
     lookat: tuple[float, float, float] = (0.0, 0.0, 0.5)
     track_body: str | None = None
 
+
 class CameraSettingsRequest(BaseModel):
+    """Pydantic model for camera settings API requests."""
     distance: float | None = None
     azimuth: float | None = None
     elevation: float | None = None
@@ -43,16 +68,35 @@ class CameraSettingsRequest(BaseModel):
     lookat_z: float | None = None
 
 class StreamingState:
+    """State container for streaming server.
+    
+    Maintains history of step statistics and current camera settings.
+    """
     def __init__(self, maxlen: int = 500):
+        """Initialize streaming state.
+        
+        Args:
+            maxlen: Maximum number of steps to keep in history.
+        """
         self.history: Deque[StepStats] = deque(maxlen=maxlen)
         self.last: StepStats | None = None
         self.camera = CameraSettings()
 
     def add_step(self, stats: StepStats):
+        """Add a step's statistics to history.
+        
+        Args:
+            stats: Step statistics to add.
+        """
         self.last = stats
         self.history.append(stats)
 
     def to_dict(self) -> Dict[str, Any]:
+        """Convert state to dictionary for JSON serialization.
+        
+        Returns:
+            Dictionary with 'last' and 'history' keys.
+        """
         hist = [asdict(s) for s in self.history]
         return {
             "last": asdict(self.last) if self.last is not None else None,
@@ -60,8 +104,10 @@ class StreamingState:
         }
 
 class FrameBuffer:
-    """
-    Holds the latest frame as JPEG. Producer overwrites, consumers stream.
+    """Thread-safe frame buffer for MJPEG streaming.
+    
+    Maintains the latest frame as JPEG bytes. Producer (eval loop) overwrites
+    the frame, consumers (HTTP clients) stream the latest frame.
     """
     def __init__(self) -> None:
         self._queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=1)
@@ -87,8 +133,14 @@ class FrameBuffer:
 
 
 def encode_jpeg(frame: np.ndarray, quality: int = 80) -> bytes:
-    """
-    frame: H x W x 3, uint8 RGB
+    """Encode RGB frame to JPEG bytes.
+    
+    Args:
+        frame: RGB image array of shape (H, W, 3) with dtype uint8.
+        quality: JPEG quality (1-100, higher = better quality).
+        
+    Returns:
+        JPEG-encoded bytes.
     """
     img = Image.fromarray(frame)
     buf = BytesIO()

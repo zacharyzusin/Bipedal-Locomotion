@@ -1,4 +1,9 @@
-# control/ik_2r.py
+"""Inverse kinematics for 2-link planar leg.
+
+This module implements inverse kinematics for a 2R (two revolute joint)
+planar leg, computing joint angles from desired foot positions. Used
+for reference policy generation and foot placement control.
+"""
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Tuple
@@ -8,6 +13,16 @@ import numpy as np
 
 @dataclass
 class Planar2RLegConfig:
+    """Configuration for 2R planar leg geometry.
+    
+    Attributes:
+        L1: Length of first link (hip to knee).
+        L2: Length of second link (knee to ankle).
+        knee_sign: Sign for knee angle (+1 for forward, -1 for backward).
+        hip_offset: Offset added to computed hip angle.
+        knee_offset: Offset added to computed knee angle.
+        ankle_offset: Offset added to computed ankle angle.
+    """
     L1: float
     L2: float
     knee_sign: float = 1.0
@@ -19,7 +34,17 @@ class Planar2RLegConfig:
 
 
 class Planar2RLegIK:
+    """Inverse kinematics solver for 2-link planar leg.
+    
+    Solves for hip, knee, and ankle angles given a desired foot position
+    in the leg's sagittal plane (x, z coordinates relative to hip).
+    """
     def __init__(self, cfg: Planar2RLegConfig):
+        """Initialize IK solver.
+        
+        Args:
+            cfg: Leg geometry configuration.
+        """
         self.cfg = cfg
 
     def solve(
@@ -30,18 +55,23 @@ class Planar2RLegIK:
         compute_ankle: bool = True,
         desired_foot_angle: float = 0.0,
     ) -> Tuple[float, float, float | None]:
-        """
-        Compute (hip_angle, knee_angle, ankle_angle) for a given ankle target (x,z).
-
+        """Solve inverse kinematics for desired foot position.
+        
+        Uses law of cosines to compute joint angles. The solution assumes
+        a 2R planar leg in the sagittal plane (x-z plane).
+        
         Args:
-            target_x, target_z: desired ankle position in hip frame.
-            enforce_reachability: if True, clamp target to reachable circle.
-            compute_ankle: if True, compute ankle angle so foot is parallel to ground.
-            desired_foot_angle: target foot pitch in world/hip frame.
-                               0.0 -> parallel to ground.
-
+            target_x: Desired foot x position relative to hip (forward/backward).
+            target_z: Desired foot z position relative to hip (up/down).
+            enforce_reachability: If True, clamp target to reachable workspace.
+            compute_ankle: If True, compute ankle angle to achieve desired
+                foot orientation.
+            desired_foot_angle: Target foot pitch angle in radians.
+                0.0 means foot parallel to ground.
+                
         Returns:
-            hip_angle, knee_angle, ankle_angle (or None if compute_ankle=False)
+            Tuple of (hip_angle, knee_angle, ankle_angle) in radians.
+            ankle_angle is None if compute_ankle=False.
         """
         L1 = self.cfg.L1
         L2 = self.cfg.L2

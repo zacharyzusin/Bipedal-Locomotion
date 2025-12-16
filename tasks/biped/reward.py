@@ -1,4 +1,9 @@
-# tasks/biped/reward.py
+"""Reward function for bipedal locomotion task.
+
+This module defines the reward function that encourages forward locomotion
+while maintaining stability. The reward includes components for forward
+velocity, staying upright, low control effort, and minimal lateral deviation.
+"""
 import mujoco
 import numpy as np
 
@@ -8,12 +13,19 @@ def _body_forward_velocity_world(
     data: mujoco.MjData,
     body_name: str,
 ) -> float:
-    """
-    Forward (world-x) linear velocity of a body using mj_objectVelocity.
-
-    mj_objectVelocity returns a 6D velocity [rot(3), lin(3)] for the body,
-    in an object-centered frame but with world orientation when flg_local=0.
-    We just take the linear part and its x-component.
+    """Compute forward (world-x) linear velocity of a body.
+    
+    Uses MuJoCo's mj_objectVelocity to get the 6D velocity (rotational
+    and linear) in world coordinates, then extracts the x-component of
+    the linear velocity.
+    
+    Args:
+        model: MuJoCo model.
+        data: MuJoCo data (current state).
+        body_name: Name of the body to query.
+        
+    Returns:
+        Forward velocity (world-x component) in m/s.
     """
     body_id = model.body(body_name).id
 
@@ -37,9 +49,15 @@ def _body_y_position(
     data: mujoco.MjData,
     body_name: str,
 ) -> float:
-    """
-    Get the global y-position of a body.
-    data.xpos contains [x, y, z] world positions for each body.
+    """Get the global y-position (lateral) of a body.
+    
+    Args:
+        model: MuJoCo model.
+        data: MuJoCo data (current state).
+        body_name: Name of the body to query.
+        
+    Returns:
+        Y-position (lateral position) in meters.
     """
     body_id = model.body(body_name).id
     return float(data.xpos[body_id, 1])  # y-component
@@ -54,8 +72,31 @@ def reward(
     vel_weight: float = 1.0,
     alive_bonus: float = 0.05,
     ctrl_cost_weight: float = 0.01,
-    lateral_cost_weight: float = 0.1,  # new parameter for y-deviation penalty
+    lateral_cost_weight: float = 0.1,
 ) -> tuple[float, dict]:
+    """Compute reward for bipedal locomotion task.
+    
+    The reward encourages:
+    - Forward velocity (from feet and base)
+    - Staying upright (alive bonus when height > threshold)
+    - Low control effort (penalty on squared torques)
+    - Minimal lateral deviation (penalty on y-position)
+    
+    Args:
+        model: MuJoCo model.
+        data: MuJoCo data (current state).
+        t: Current time step.
+        dt: Time step duration.
+        action: Applied action (torques).
+        vel_weight: Weight for forward velocity reward.
+        alive_bonus: Bonus given when robot is upright.
+        ctrl_cost_weight: Weight for control cost penalty.
+        lateral_cost_weight: Weight for lateral deviation penalty.
+        
+    Returns:
+        Tuple of (total_reward, reward_components_dict) where the dict
+        contains breakdown of individual reward components for analysis.
+    """
     # --- forward velocity from hips + feet ---
     base_forward  = 2.0 * _body_forward_velocity_world(model, data, "hips")
     left_forward  = _body_forward_velocity_world(model, data, "left_foot")
